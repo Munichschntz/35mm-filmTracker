@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 
 class FilmDatabase:
-    LATEST_SCHEMA_VERSION = 2
+    LATEST_SCHEMA_VERSION = 3
 
     def __init__(self, db_path: str = "data/film_tracker.db") -> None:
         self.db_path = Path(db_path)
@@ -29,6 +29,11 @@ class FilmDatabase:
             if current_version < 2:
                 self._migrate_to_v2(conn)
                 self._set_schema_version(conn, 2)
+                current_version = 2
+
+            if current_version < 3:
+                self._migrate_to_v3(conn)
+                self._set_schema_version(conn, 3)
 
     @staticmethod
     def _create_base_schema(conn: sqlite3.Connection) -> None:
@@ -81,25 +86,71 @@ class FilmDatabase:
         if not self._column_exists(conn, "shots", "status"):
             conn.execute("ALTER TABLE shots ADD COLUMN status TEXT NOT NULL DEFAULT 'shot'")
 
+    def _migrate_to_v3(self, conn: sqlite3.Connection) -> None:
+        if not self._column_exists(conn, "collections", "film_stock"):
+            conn.execute("ALTER TABLE collections ADD COLUMN film_stock TEXT")
+        if not self._column_exists(conn, "collections", "iso"):
+            conn.execute("ALTER TABLE collections ADD COLUMN iso INTEGER")
+        if not self._column_exists(conn, "collections", "camera"):
+            conn.execute("ALTER TABLE collections ADD COLUMN camera TEXT")
+        if not self._column_exists(conn, "collections", "lens"):
+            conn.execute("ALTER TABLE collections ADD COLUMN lens TEXT")
+        if not self._column_exists(conn, "collections", "lab"):
+            conn.execute("ALTER TABLE collections ADD COLUMN lab TEXT")
+        if not self._column_exists(conn, "collections", "push_pull"):
+            conn.execute("ALTER TABLE collections ADD COLUMN push_pull TEXT")
+
     # Collection operations
     def list_collections(self) -> list[sqlite3.Row]:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, name, created_at
+                SELECT id, name, film_stock, iso, camera, lens, lab, push_pull, created_at
                 FROM collections
                 ORDER BY name COLLATE NOCASE, id
                 """
             )
             return cursor.fetchall()
 
-    def create_collection(self, name: str) -> int:
+    def create_collection(
+        self,
+        name: str,
+        film_stock: Optional[str] = None,
+        iso: Optional[int] = None,
+        camera: Optional[str] = None,
+        lens: Optional[str] = None,
+        lab: Optional[str] = None,
+        push_pull: Optional[str] = None,
+    ) -> int:
         with self._connect() as conn:
             cursor = conn.execute(
-                "INSERT INTO collections (name) VALUES (?)",
-                (name.strip(),),
+                """
+                INSERT INTO collections (name, film_stock, iso, camera, lens, lab, push_pull)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    name.strip(),
+                    self.normalize_optional_text(film_stock),
+                    iso,
+                    self.normalize_optional_text(camera),
+                    self.normalize_optional_text(lens),
+                    self.normalize_optional_text(lab),
+                    self.normalize_optional_text(push_pull),
+                ),
             )
             return int(cursor.lastrowid)
+
+    def get_collection(self, collection_id: int) -> Optional[sqlite3.Row]:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, name, film_stock, iso, camera, lens, lab, push_pull, created_at
+                FROM collections
+                WHERE id = ?
+                """,
+                (collection_id,),
+            )
+            return cursor.fetchone()
 
     def rename_collection(self, collection_id: int, new_name: str) -> None:
         with self._connect() as conn:
@@ -108,26 +159,83 @@ class FilmDatabase:
                 (new_name.strip(), collection_id),
             )
 
+    def update_collection_metadata(
+        self,
+        collection_id: int,
+        name: str,
+        film_stock: Optional[str],
+        iso: Optional[int],
+        camera: Optional[str],
+        lens: Optional[str],
+        lab: Optional[str],
+        push_pull: Optional[str],
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE collections
+                SET name = ?,
+                    film_stock = ?,
+                    iso = ?,
+                    camera = ?,
+                    lens = ?,
+                    lab = ?,
+                    push_pull = ?
+                WHERE id = ?
+                """,
+                (
+                    name.strip(),
+                    self.normalize_optional_text(film_stock),
+                    iso,
+                    self.normalize_optional_text(camera),
+                    self.normalize_optional_text(lens),
+                    self.normalize_optional_text(lab),
+                    self.normalize_optional_text(push_pull),
+                    collection_id,
+                ),
+            )
+
     def delete_collection(self, collection_id: int) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
 
     # Shot operations
-    def list_shots_for_collection(self, collection_id: int) -> list[sqlite3.Row]:
+    def list_shots_for_collection(self, collection_id: int, status: Optional[str] = None) -> list[sqlite3.Row]:
         with self._connect() as conn:
-            cursor = conn.execute(
-                """
+            query = """
                 SELECT id, shutter_speed, f_stop, frame_number, shot_date, notes, status, created_at
                 FROM shots
                 WHERE collection_id = ?
+            """
+            params: tuple[Any, ...] = (collection_id,)
+
+            if status is not None:
+                query += " AND status = ?"
+                params = (collection_id, status)
+
+            query += """
                 ORDER BY
                     CASE WHEN frame_number IS NULL THEN 1 ELSE 0 END,
                     frame_number,
                     id
+            """
+
+            cursor = conn.execute(query, params)
+            return cursor.fetchall()
+
+    def next_frame_number_for_collection(self, collection_id: int) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                SELECT MAX(frame_number) AS max_frame
+                FROM shots
+                WHERE collection_id = ?
                 """,
                 (collection_id,),
             )
-            return cursor.fetchall()
+            row = cursor.fetchone()
+            max_frame = row["max_frame"] if row else None
+            return int(max_frame) + 1 if max_frame is not None else 1
 
     def create_shot(
         self,
