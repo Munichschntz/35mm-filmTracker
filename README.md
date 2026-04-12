@@ -70,7 +70,7 @@ Frame numbers are unique within the same collection when provided.
 ### Usage
 
 1. Add a collection from the left panel.
-2. (Optional) click `Edit Meta` to update roll metadata in a structured form dialog.
+2. (Optional) click `Edit` to update collection name and metadata in a single structured form dialog.
 3. Select a collection.
 4. Enter shot details in the form on the right.
 5. Click `Save Shot` to add a new shot.

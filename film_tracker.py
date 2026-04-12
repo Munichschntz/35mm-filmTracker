@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from datetime import datetime
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import messagebox, ttk
 
 from db import FilmDatabase
 
@@ -192,12 +192,10 @@ class FilmTrackerApp:
         buttons.columnconfigure(0, weight=1)
         buttons.columnconfigure(1, weight=1)
         buttons.columnconfigure(2, weight=1)
-        buttons.columnconfigure(3, weight=1)
 
         ttk.Button(buttons, text="Add", command=self._add_collection).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(buttons, text="Rename", command=self._rename_collection).grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(buttons, text="Edit Meta", command=self._edit_collection_metadata).grid(row=0, column=2, sticky="ew", padx=4)
-        ttk.Button(buttons, text="Delete", command=self._delete_collection).grid(row=0, column=3, sticky="ew", padx=(4, 0))
+        ttk.Button(buttons, text="Edit", command=self._edit_collection).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(buttons, text="Delete", command=self._delete_collection).grid(row=0, column=2, sticky="ew", padx=(4, 0))
 
     def _build_shot_panel(self, parent: ttk.Frame) -> None:
         panel = ttk.LabelFrame(parent, text="Shots", padding=10)
@@ -577,10 +575,10 @@ class FilmTrackerApp:
         self._load_collections()
         self._load_shots_for_selected_collection()
 
-    def _edit_collection_metadata(self) -> None:
+    def _edit_collection(self) -> None:
         collection_id = self._get_selected_collection_id()
         if collection_id is None:
-            messagebox.showinfo("Select Collection", "Select a collection to edit metadata.")
+            messagebox.showinfo("Select Collection", "Select a collection to edit.")
             return
 
         row = self.db.get_collection(collection_id)
@@ -621,49 +619,6 @@ class FilmTrackerApp:
         self.selected_collection_id = collection_id
         self._load_collections()
         self._load_shots_for_selected_collection()
-
-    def _rename_collection(self) -> None:
-        collection_id = self._get_selected_collection_id()
-        if collection_id is None:
-            messagebox.showinfo("Select Collection", "Select a collection to rename.")
-            return
-
-        current_name = self.collection_list.get(self.collection_list.curselection()[0])
-        new_name = simpledialog.askstring(
-            "Rename Collection",
-            "New collection name:",
-            parent=self.root,
-            initialvalue=current_name,
-        )
-        if new_name is None:
-            return
-
-        cleaned = new_name.strip()
-        if not cleaned:
-            messagebox.showerror("Invalid Name", "Collection name cannot be empty.")
-            return
-
-        try:
-            row = self.db.get_collection(collection_id)
-            if row is None:
-                messagebox.showerror("Database Error", "Could not load collection metadata.")
-                return
-            self.db.update_collection_metadata(
-                collection_id,
-                cleaned,
-                row["film_stock"],
-                row["iso"],
-                row["camera"],
-                row["lens"],
-                row["lab"],
-                row["push_pull"],
-            )
-        except Exception as exc:
-            messagebox.showerror("Database Error", f"Could not rename collection.\n\n{exc}")
-            return
-
-        self.selected_collection_id = collection_id
-        self._load_collections()
 
     def _delete_collection(self) -> None:
         collection_id = self._get_selected_collection_id()
