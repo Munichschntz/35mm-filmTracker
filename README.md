@@ -40,19 +40,49 @@ This repository now includes a Tkinter desktop app for tracking film shots per r
 ### Run
 
 1. Ensure Python 3.10+ is installed.
-2. Install dependencies:
+2. Create and activate a virtual environment.
+
+Linux/macOS:
 
 ```bash
-python3 -m pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-3. Start the app:
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+3. Install dependencies:
 
 ```bash
-python3 film_tracker.py
+python -m pip install -r requirements.txt
+```
+
+4. Start the app:
+
+```bash
+python film_tracker.py
 ```
 
 Dependencies: `tkcalendar` (UI date picker). `tkinter` and `sqlite3` are from the Python standard library.
+
+### Windows Launcher (`run.bat`)
+
+Run `run.bat` from File Explorer or Command Prompt to:
+
+1. Open PowerShell in the project folder.
+2. Activate `.venv`.
+3. Keep PowerShell open so you can run commands, for example:
+
+```powershell
+python film_tracker.py
+```
+
+If `.venv` does not exist, the launcher shows setup commands and exits.
 
 ### Data Model
 
