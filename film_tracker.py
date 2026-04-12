@@ -16,6 +16,16 @@ except ImportError:  # Fallback keeps the app runnable if dependency is missing.
 from db import FilmDatabase
 
 
+class BootstrapSafeDateEntry(DateEntry):
+    def configure(self, cnf: object = None, **kwargs: object) -> object:
+        # ttkbootstrap may call configure(style=...) before tkcalendar sets _calendar.
+        if not hasattr(self, "_calendar"):
+            return ttk.Entry.configure(self, cnf, **kwargs)
+        return super().configure(cnf, **kwargs)
+
+    config = configure
+
+
 class ValidationUtils:
     @staticmethod
     def parse_optional_iso(value: str | None) -> int | None:
@@ -408,7 +418,7 @@ class FilmTrackerApp:
 
         ttk.Label(form, text="Shot Date").grid(row=0, column=3, sticky="w")
         self.date_var = tk.StringVar()
-        self.date_entry = DateEntry(
+        self.date_entry = BootstrapSafeDateEntry(
             form,
             textvariable=self.date_var,
             date_pattern="yyyy-mm-dd",
