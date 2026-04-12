@@ -14,8 +14,10 @@ This repository now includes a Tkinter desktop app for tracking film shots per r
 	- Frame number (optional)
 	- Shot date (optional, `YYYY-MM-DD`)
 	- Notes (optional)
+	- Status (`shot`, `developed`, `scanned`, `edited`, `printed`)
 - SQLite persistence at `data/film_tracker.db`
 - Delete protection prompts for collections and shots
+- Automatic schema migration support (uses SQLite `PRAGMA user_version`)
 
 ### Run
 
@@ -42,6 +44,7 @@ No third-party packages are required (`tkinter` and `sqlite3` are from the Pytho
 	- `frame_number` (optional)
 	- `shot_date` (optional)
 	- `notes` (optional)
+	- `status` (default: `shot`)
 	- `created_at`
 
 Frame numbers are unique within the same collection when provided.

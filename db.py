@@ -4,6 +4,8 @@ from typing import Any, Optional
 
 
 class FilmDatabase:
+    LATEST_SCHEMA_VERSION = 2
+
     def __init__(self, db_path: str = "data/film_tracker.db") -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -17,35 +19,67 @@ class FilmDatabase:
 
     def _initialize(self) -> None:
         with self._connect() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS collections (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL CHECK (trim(name) <> ''),
-                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-                );
+            self._create_base_schema(conn)
 
-                CREATE TABLE IF NOT EXISTS shots (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    collection_id INTEGER NOT NULL,
-                    shutter_speed TEXT NOT NULL CHECK (trim(shutter_speed) <> ''),
-                    f_stop TEXT NOT NULL CHECK (trim(f_stop) <> ''),
-                    frame_number INTEGER,
-                    shot_date TEXT,
-                    notes TEXT,
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
-                    CHECK (frame_number IS NULL OR frame_number > 0)
-                );
+            current_version = self._get_schema_version(conn)
+            if current_version < 1:
+                self._set_schema_version(conn, 1)
+                current_version = 1
 
-                CREATE INDEX IF NOT EXISTS idx_shots_collection_id
-                    ON shots(collection_id);
+            if current_version < 2:
+                self._migrate_to_v2(conn)
+                self._set_schema_version(conn, 2)
 
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_frame_per_collection
-                    ON shots(collection_id, frame_number)
-                    WHERE frame_number IS NOT NULL;
-                """
-            )
+    @staticmethod
+    def _create_base_schema(conn: sqlite3.Connection) -> None:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS collections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL CHECK (trim(name) <> ''),
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS shots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                collection_id INTEGER NOT NULL,
+                shutter_speed TEXT NOT NULL CHECK (trim(shutter_speed) <> ''),
+                f_stop TEXT NOT NULL CHECK (trim(f_stop) <> ''),
+                frame_number INTEGER,
+                shot_date TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+                CHECK (frame_number IS NULL OR frame_number > 0)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_shots_collection_id
+                ON shots(collection_id);
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_frame_per_collection
+                ON shots(collection_id, frame_number)
+                WHERE frame_number IS NOT NULL;
+            """
+        )
+
+    @staticmethod
+    def _get_schema_version(conn: sqlite3.Connection) -> int:
+        cursor = conn.execute("PRAGMA user_version")
+        row = cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    @staticmethod
+    def _set_schema_version(conn: sqlite3.Connection, version: int) -> None:
+        conn.execute(f"PRAGMA user_version = {version}")
+
+    @staticmethod
+    def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+        cursor = conn.execute(f"PRAGMA table_info({table})")
+        return any(row["name"] == column for row in cursor.fetchall())
+
+    def _migrate_to_v2(self, conn: sqlite3.Connection) -> None:
+        if not self._column_exists(conn, "shots", "status"):
+            conn.execute("ALTER TABLE shots ADD COLUMN status TEXT NOT NULL DEFAULT 'shot'")
 
     # Collection operations
     def list_collections(self) -> list[sqlite3.Row]:
@@ -83,7 +117,7 @@ class FilmDatabase:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, shutter_speed, f_stop, frame_number, shot_date, notes, created_at
+                SELECT id, shutter_speed, f_stop, frame_number, shot_date, notes, status, created_at
                 FROM shots
                 WHERE collection_id = ?
                 ORDER BY
@@ -103,13 +137,14 @@ class FilmDatabase:
         frame_number: Optional[int],
         shot_date: Optional[str],
         notes: Optional[str],
+        status: str = "shot",
     ) -> int:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO shots (
-                    collection_id, shutter_speed, f_stop, frame_number, shot_date, notes
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    collection_id, shutter_speed, f_stop, frame_number, shot_date, notes, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     collection_id,
@@ -118,6 +153,7 @@ class FilmDatabase:
                     frame_number,
                     shot_date,
                     notes,
+                    status,
                 ),
             )
             return int(cursor.lastrowid)
@@ -130,6 +166,7 @@ class FilmDatabase:
         frame_number: Optional[int],
         shot_date: Optional[str],
         notes: Optional[str],
+        status: str = "shot",
     ) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -139,7 +176,8 @@ class FilmDatabase:
                     f_stop = ?,
                     frame_number = ?,
                     shot_date = ?,
-                    notes = ?
+                    notes = ?,
+                    status = ?
                 WHERE id = ?
                 """,
                 (
@@ -148,8 +186,16 @@ class FilmDatabase:
                     frame_number,
                     shot_date,
                     notes,
+                    status,
                     shot_id,
                 ),
+            )
+
+    def update_shot_status(self, shot_id: int, status: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE shots SET status = ? WHERE id = ?",
+                (status, shot_id),
             )
 
     def delete_shot(self, shot_id: int) -> None:
@@ -160,7 +206,7 @@ class FilmDatabase:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, collection_id, shutter_speed, f_stop, frame_number, shot_date, notes
+                SELECT id, collection_id, shutter_speed, f_stop, frame_number, shot_date, notes, status
                 FROM shots
                 WHERE id = ?
                 """,

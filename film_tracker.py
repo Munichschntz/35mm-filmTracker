@@ -8,6 +8,8 @@ from db import FilmDatabase
 
 
 class FilmTrackerApp:
+    STATUS_VALUES = ("shot", "developed", "scanned", "edited", "printed")
+
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("35mm Film Shot Tracker")
@@ -72,22 +74,24 @@ class FilmTrackerApp:
 
         self.shot_tree = ttk.Treeview(
             panel,
-            columns=("frame", "shutter", "fstop", "date", "notes"),
+            columns=("frame", "status", "shutter", "fstop", "date", "notes"),
             show="headings",
             selectmode="browse",
             height=12,
         )
         self.shot_tree.heading("frame", text="Frame")
+        self.shot_tree.heading("status", text="Status")
         self.shot_tree.heading("shutter", text="Shutter Speed")
         self.shot_tree.heading("fstop", text="F-Stop")
         self.shot_tree.heading("date", text="Shot Date")
         self.shot_tree.heading("notes", text="Notes")
 
         self.shot_tree.column("frame", width=70, anchor="center")
+        self.shot_tree.column("status", width=100, anchor="center")
         self.shot_tree.column("shutter", width=120, anchor="center")
         self.shot_tree.column("fstop", width=90, anchor="center")
         self.shot_tree.column("date", width=120, anchor="center")
-        self.shot_tree.column("notes", width=320, anchor="w")
+        self.shot_tree.column("notes", width=250, anchor="w")
 
         self.shot_tree.grid(row=1, column=0, sticky="nsew")
         self.shot_tree.bind("<<TreeviewSelect>>", self._on_shot_selected)
@@ -98,7 +102,7 @@ class FilmTrackerApp:
 
         form = ttk.LabelFrame(panel, text="Shot Details", padding=10)
         form.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        for idx in range(6):
+        for idx in range(7):
             form.columnconfigure(idx, weight=1)
 
         ttk.Label(form, text="Shutter Speed *").grid(row=0, column=0, sticky="w")
@@ -121,8 +125,19 @@ class FilmTrackerApp:
         self.notes_var = tk.StringVar()
         ttk.Entry(form, textvariable=self.notes_var).grid(row=1, column=4, sticky="ew", padx=(0, 8))
 
+        ttk.Label(form, text="Status").grid(row=0, column=5, sticky="w")
+        self.status_var = tk.StringVar(value="shot")
+        self.status_combo = ttk.Combobox(
+            form,
+            textvariable=self.status_var,
+            values=self.STATUS_VALUES,
+            state="readonly",
+        )
+        self.status_combo.grid(row=1, column=5, sticky="ew", padx=(0, 8))
+        self.status_combo.current(0)
+
         buttons = ttk.Frame(form)
-        buttons.grid(row=1, column=5, sticky="ew")
+        buttons.grid(row=1, column=6, sticky="ew")
         buttons.columnconfigure(0, weight=1)
         buttons.columnconfigure(1, weight=1)
         buttons.columnconfigure(2, weight=1)
@@ -279,6 +294,7 @@ class FilmTrackerApp:
                 iid=str(shot_id),
                 values=(
                     frame,
+                    shot["status"],
                     shot["shutter_speed"],
                     shot["f_stop"],
                     date,
@@ -304,13 +320,15 @@ class FilmTrackerApp:
         self.frame_var.set("" if row["frame_number"] is None else str(row["frame_number"]))
         self.date_var.set(row["shot_date"] or "")
         self.notes_var.set(row["notes"] or "")
+        self.status_var.set(row["status"] or "shot")
 
-    def _validate_shot_fields(self) -> tuple[str, str, int | None, str | None, str | None] | None:
+    def _validate_shot_fields(self) -> tuple[str, str, int | None, str | None, str | None, str] | None:
         shutter = self.shutter_var.get().strip()
         f_stop = self.fstop_var.get().strip()
         frame_raw = self.frame_var.get().strip()
         shot_date_raw = self.date_var.get().strip()
         notes_raw = self.notes_var.get().strip()
+        status_raw = self.status_var.get().strip()
 
         if not shutter:
             messagebox.showerror("Validation Error", "Shutter speed is required.")
@@ -340,8 +358,12 @@ class FilmTrackerApp:
                 return None
             shot_date = shot_date_raw
 
+        if status_raw not in self.STATUS_VALUES:
+            messagebox.showerror("Validation Error", "Invalid shot status.")
+            return None
+
         notes = notes_raw if notes_raw else None
-        return shutter, f_stop, frame_value, shot_date, notes
+        return shutter, f_stop, frame_value, shot_date, notes, status_raw
 
     def _save_shot(self) -> None:
         if self.selected_collection_id is None:
@@ -352,7 +374,7 @@ class FilmTrackerApp:
         if validated is None:
             return
 
-        shutter, f_stop, frame_number, shot_date, notes = validated
+        shutter, f_stop, frame_number, shot_date, notes, status = validated
 
         try:
             if self.selected_shot_id is None:
@@ -363,6 +385,7 @@ class FilmTrackerApp:
                     frame_number,
                     shot_date,
                     notes,
+                    status,
                 )
             else:
                 self.db.update_shot(
@@ -372,6 +395,7 @@ class FilmTrackerApp:
                     frame_number,
                     shot_date,
                     notes,
+                    status,
                 )
         except Exception as exc:
             # Surface unique frame constraint collisions and other DB errors clearly.
@@ -407,6 +431,7 @@ class FilmTrackerApp:
         self.frame_var.set("")
         self.date_var.set("")
         self.notes_var.set("")
+        self.status_var.set("shot")
         self.shot_tree.selection_remove(self.shot_tree.selection())
 
 
