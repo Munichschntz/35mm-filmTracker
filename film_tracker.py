@@ -5,25 +5,9 @@ import tkinter as tk
 import tkinter.font as tkfont
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
-
-from tkcalendar import DateEntry
-
-try:
-    import ttkbootstrap as tb
-except ImportError:  # Fallback keeps the app runnable if dependency is missing.
-    tb = None
+import ttkbootstrap as tb
 
 from db import FilmDatabase
-
-
-class BootstrapSafeDateEntry(DateEntry):
-    def configure(self, cnf: object = None, **kwargs: object) -> object:
-        # ttkbootstrap may call configure(style=...) before tkcalendar sets _calendar.
-        if not hasattr(self, "_calendar"):
-            return ttk.Entry.configure(self, cnf, **kwargs)
-        return super().configure(cnf, **kwargs)
-
-    config = configure
 
 
 class ValidationUtils:
@@ -197,6 +181,8 @@ class FilmTrackerApp:
         self.active_status_filter = tk.StringVar(value=self.preferences["default_status_filter"])
 
         self.collection_ids_by_index: list[int] = []
+        self.collection_id_to_item: dict[int, str] = {}
+        self.collection_id_to_label: dict[int, str] = {}
 
         self._build_ui()
         self.root.bind("<Control-Return>", self._on_save_next_shortcut)
@@ -235,8 +221,7 @@ class FilmTrackerApp:
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
-        if tb is not None:
-            style.theme_use("litera")
+        style.theme_use("litera")
         base_font = tkfont.nametofont("TkDefaultFont")
         input_font = base_font.copy()
         input_font.configure(size=base_font.cget("size") + 1)
@@ -282,9 +267,11 @@ class FilmTrackerApp:
         panel.columnconfigure(0, weight=1)
         panel.rowconfigure(0, weight=1)
 
-        self.collection_list = tk.Listbox(panel, exportselection=False)
+        self.collection_list = ttk.Treeview(panel, columns=("label",), show="headings", selectmode="browse", height=18)
+        self.collection_list.heading("label", text="Collection")
+        self.collection_list.column("label", anchor="w")
         self.collection_list.grid(row=0, column=0, sticky="nsew")
-        self.collection_list.bind("<<ListboxSelect>>", self._on_collection_selected)
+        self.collection_list.bind("<<TreeviewSelect>>", self._on_collection_selected)
 
         scrollbar = ttk.Scrollbar(panel, orient="vertical", command=self.collection_list.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
@@ -418,13 +405,7 @@ class FilmTrackerApp:
 
         ttk.Label(form, text="Shot Date").grid(row=0, column=3, sticky="w")
         self.date_var = tk.StringVar()
-        self.date_entry = BootstrapSafeDateEntry(
-            form,
-            textvariable=self.date_var,
-            date_pattern="yyyy-mm-dd",
-            width=12,
-            font=self.input_font,
-        )
+        self.date_entry = ttk.Entry(form, textvariable=self.date_var, style="Large.TEntry", width=12)
         self.date_entry.grid(row=1, column=3, sticky="ew", padx=(0, 8))
 
         ttk.Label(form, text="Notes").grid(row=0, column=4, columnspan=4, sticky="w")
@@ -645,8 +626,10 @@ class FilmTrackerApp:
     def _load_collections(self) -> None:
         collections = self.db.list_collections()
 
-        self.collection_list.delete(0, tk.END)
+        self.collection_list.delete(*self.collection_list.get_children())
         self.collection_ids_by_index.clear()
+        self.collection_id_to_item.clear()
+        self.collection_id_to_label.clear()
 
         for row in collections:
             label = str(row["name"])
@@ -656,19 +639,22 @@ class FilmTrackerApp:
                 label = f"{label} - {stock}"
             if iso is not None:
                 label = f"{label} (ISO {iso})"
-            self.collection_list.insert(tk.END, label)
-            self.collection_ids_by_index.append(int(row["id"]))
+            collection_id = int(row["id"])
+            item = self.collection_list.insert("", tk.END, values=(label,))
+            self.collection_ids_by_index.append(collection_id)
+            self.collection_id_to_item[collection_id] = item
+            self.collection_id_to_label[collection_id] = label
 
         if self.selected_collection_id is not None:
             self._restore_collection_selection()
 
     def _restore_collection_selection(self) -> None:
-        for idx, collection_id in enumerate(self.collection_ids_by_index):
-            if collection_id == self.selected_collection_id:
-                self.collection_list.selection_clear(0, tk.END)
-                self.collection_list.selection_set(idx)
-                self.collection_list.activate(idx)
-                self.collection_list.see(idx)
+        if self.selected_collection_id is not None:
+            selected_item = self.collection_id_to_item.get(self.selected_collection_id)
+            if selected_item is not None:
+                self.collection_list.selection_set(selected_item)
+                self.collection_list.focus(selected_item)
+                self.collection_list.see(selected_item)
                 return
 
         self.selected_collection_id = None
@@ -676,13 +662,20 @@ class FilmTrackerApp:
         self._load_shots_for_selected_collection()
 
     def _get_selected_collection_id(self) -> int | None:
-        selection = self.collection_list.curselection()
+        selection = self.collection_list.selection()
         if not selection:
             return None
-        selected_index = selection[0]
-        if selected_index >= len(self.collection_ids_by_index):
-            return None
-        return self.collection_ids_by_index[selected_index]
+        selected_item = selection[0]
+        for collection_id, item in self.collection_id_to_item.items():
+            if item == selected_item:
+                return collection_id
+        return None
+
+    def _get_selected_collection_label(self) -> str:
+        collection_id = self._get_selected_collection_id()
+        if collection_id is None:
+            return ""
+        return self.collection_id_to_label.get(collection_id, "")
 
     def _on_collection_selected(self, _event: object) -> None:
         self.selected_collection_id = self._get_selected_collection_id()
@@ -928,10 +921,7 @@ class FilmTrackerApp:
             self.collection_meta_var.set("")
             return
 
-        selected_label = ""
-        selection = self.collection_list.curselection()
-        if selection:
-            selected_label = self.collection_list.get(selection[0])
+        selected_label = self._get_selected_collection_label()
 
         active_filter = self.active_status_filter.get()
         selected_status = None if active_filter == "all" else active_filter
@@ -1171,10 +1161,7 @@ class FilmTrackerApp:
 
 
 def main() -> None:
-    if tb is not None:
-        root = tb.Window(themename="litera")
-    else:
-        root = tk.Tk()
+    root = tb.Window(themename="litera")
     app = FilmTrackerApp(root)
     root.mainloop()
 
