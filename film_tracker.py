@@ -166,8 +166,8 @@ class FilmTrackerApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("35mm Film Shot Tracker")
-        self.root.geometry("1100x650")
-        self.root.minsize(900, 560)
+        self.root.geometry("1180x680")
+        self.root.minsize(1020, 600)
 
         self.db = FilmDatabase("data/film_tracker.db")
         self.preferences = dict(self.DEFAULT_PREFERENCES)
@@ -198,7 +198,7 @@ class FilmTrackerApp:
         container = ttk.Frame(self.root, padding=12)
         container.grid(row=0, column=0, sticky="nsew")
         container.columnconfigure(0, weight=1)
-        container.columnconfigure(1, weight=3)
+        container.columnconfigure(1, weight=4)
         container.rowconfigure(0, weight=1)
 
         self._build_collection_panel(container)
@@ -267,12 +267,13 @@ class FilmTrackerApp:
         buttons.columnconfigure(2, weight=1)
         buttons.columnconfigure(3, weight=1)
         buttons.columnconfigure(4, weight=1)
+        buttons.columnconfigure(5, weight=1)
 
-        ttk.Button(buttons, text="Add", command=self._add_collection).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(buttons, text="Edit", command=self._edit_collection).grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(buttons, text="Delete", command=self._delete_collection).grid(row=0, column=2, sticky="ew", padx=(4, 0))
-        ttk.Button(buttons, text="Import", command=self._import_shots_csv).grid(row=1, column=0, columnspan=2, sticky="ew", padx=(0, 4), pady=(6, 0))
-        ttk.Button(buttons, text="Export", command=self._export_shots_csv).grid(row=1, column=2, columnspan=3, sticky="ew", padx=(4, 0), pady=(6, 0))
+        ttk.Button(buttons, text="Add", command=self._add_collection).grid(row=0, column=0, columnspan=2, sticky="ew", padx=(0, 4))
+        ttk.Button(buttons, text="Edit", command=self._edit_collection).grid(row=0, column=2, columnspan=2, sticky="ew", padx=4)
+        ttk.Button(buttons, text="Delete", command=self._delete_collection).grid(row=0, column=4, columnspan=2, sticky="ew", padx=(4, 0))
+        ttk.Button(buttons, text="Import", command=self._import_shots_csv).grid(row=1, column=0, columnspan=3, sticky="ew", padx=(0, 4), pady=(6, 0))
+        ttk.Button(buttons, text="Export", command=self._export_shots_csv).grid(row=1, column=3, columnspan=3, sticky="ew", padx=(4, 0), pady=(6, 0))
 
     def _build_shot_panel(self, parent: ttk.Frame) -> None:
         panel = ttk.LabelFrame(parent, text="Shots", padding=10)
@@ -359,8 +360,12 @@ class FilmTrackerApp:
 
         form = ttk.LabelFrame(panel, text="Shot Details", padding=10)
         form.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        for idx in range(7):
-            form.columnconfigure(idx, weight=1)
+        form.columnconfigure(0, weight=1)
+        form.columnconfigure(1, weight=1)
+        form.columnconfigure(2, weight=1)
+        form.columnconfigure(3, weight=0)
+        form.columnconfigure(4, weight=2)
+        form.columnconfigure(5, weight=0)
 
         ttk.Label(form, text="Shutter Speed *").grid(row=0, column=0, sticky="w")
         self.shutter_var = tk.StringVar()
@@ -377,7 +382,7 @@ class FilmTrackerApp:
         self.frame_entry = ttk.Entry(form, textvariable=self.frame_var)
         self.frame_entry.grid(row=1, column=2, sticky="ew", padx=(0, 8))
 
-        ttk.Label(form, text="Shot Date (YYYY-MM-DD)").grid(row=0, column=3, sticky="w")
+        ttk.Label(form, text="Shot Date").grid(row=0, column=3, sticky="w")
         self.date_var = tk.StringVar()
         self.date_entry = DateEntry(
             form,
@@ -399,12 +404,13 @@ class FilmTrackerApp:
             textvariable=self.status_var,
             values=self.STATUS_VALUES,
             state="readonly",
+            width=12,
         )
         self.status_combo.grid(row=1, column=5, sticky="ew", padx=(0, 8))
         self.status_combo.current(0)
 
         buttons = ttk.Frame(form)
-        buttons.grid(row=1, column=6, sticky="ew")
+        buttons.grid(row=2, column=0, columnspan=6, sticky="e", pady=(10, 0))
         buttons.columnconfigure(0, weight=1)
         buttons.columnconfigure(1, weight=1)
         buttons.columnconfigure(2, weight=1)
