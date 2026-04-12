@@ -8,6 +8,11 @@ from tkinter import filedialog, messagebox, ttk
 
 from tkcalendar import DateEntry
 
+try:
+    import ttkbootstrap as tb
+except ImportError:  # Fallback keeps the app runnable if dependency is missing.
+    tb = None
+
 from db import FilmDatabase
 
 
@@ -220,6 +225,8 @@ class FilmTrackerApp:
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
+        if tb is not None:
+            style.theme_use("litera")
         base_font = tkfont.nametofont("TkDefaultFont")
         input_font = base_font.copy()
         input_font.configure(size=base_font.cget("size") + 1)
@@ -1154,7 +1161,10 @@ class FilmTrackerApp:
 
 
 def main() -> None:
-    root = tk.Tk()
+    if tb is not None:
+        root = tb.Window(themename="litera")
+    else:
+        root = tk.Tk()
     app = FilmTrackerApp(root)
     root.mainloop()
 

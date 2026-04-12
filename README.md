@@ -29,6 +29,7 @@ This repository now includes a Tkinter desktop app for tracking film shots per r
 - Preferences window (`App` -> `Preferences`) with tabbed settings for defaults, quick entry, metadata display, and workflow tips
 - Camera and lens presets (configured in Preferences, reused in collection metadata dialog)
 - Date picker (`tkcalendar`) for shot date entry
+- Themed UI using `ttkbootstrap` (`litera`)
 - CSV export for collection shots
 - CSV import for batch shot insertion with row-level error summary
 - Status-colored shot rows in the table
@@ -68,7 +69,7 @@ python -m pip install -r requirements.txt
 python film_tracker.py
 ```
 
-Dependencies: `tkcalendar` (UI date picker). `tkinter` and `sqlite3` are from the Python standard library.
+Dependencies: `ttkbootstrap` (ttk theme engine) and `tkcalendar` (date picker). `tkinter` and `sqlite3` are from the Python standard library.
 
 ### Windows Launcher (`run.bat`)
 
