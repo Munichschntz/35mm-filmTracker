@@ -1,14 +1,67 @@
 from __future__ import annotations
 
+import csv
 import tkinter as tk
 from datetime import datetime
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
+
+from tkcalendar import DateEntry
 
 from db import FilmDatabase
 
 
+class ValidationUtils:
+    @staticmethod
+    def parse_optional_iso(value: str | None) -> int | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        parsed = int(stripped)
+        if parsed <= 0:
+            raise ValueError("ISO must be a positive number.")
+        return parsed
+
+    @staticmethod
+    def parse_optional_frame(value: str | None) -> int | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        parsed = int(stripped)
+        if parsed <= 0:
+            raise ValueError("Frame number must be greater than zero.")
+        return parsed
+
+    @staticmethod
+    def parse_optional_date(value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        datetime.strptime(stripped, "%Y-%m-%d")
+        return stripped
+
+    @staticmethod
+    def normalize_optional_text(value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped if stripped else None
+
+
 class CollectionMetadataDialog:
-    def __init__(self, parent: tk.Tk, title: str, initial: dict[str, str]) -> None:
+    def __init__(
+        self,
+        parent: tk.Tk,
+        title: str,
+        initial: dict[str, str],
+        camera_presets: list[str],
+        lens_presets: list[str],
+    ) -> None:
         self.parent = parent
         self.result: dict[str, str] | None = None
 
@@ -36,7 +89,12 @@ class CollectionMetadataDialog:
             ttk.Label(body, text=label).grid(row=row_index, column=0, sticky="w", padx=(0, 8), pady=4)
             var = tk.StringVar(value=initial.get(key, ""))
             self.vars[key] = var
-            entry = ttk.Entry(body, textvariable=var, width=40)
+            if key == "camera":
+                entry = ttk.Combobox(body, textvariable=var, values=camera_presets, width=38)
+            elif key == "lens":
+                entry = ttk.Combobox(body, textvariable=var, values=lens_presets, width=38)
+            else:
+                entry = ttk.Entry(body, textvariable=var, width=40)
             entry.grid(row=row_index, column=1, sticky="ew", pady=4)
             if key == "name":
                 entry.focus_set()
@@ -71,12 +129,9 @@ class CollectionMetadataDialog:
         iso_raw = self.vars["iso"].get().strip()
         if iso_raw:
             try:
-                iso_value = int(iso_raw)
-            except ValueError:
-                messagebox.showerror("Validation Error", "ISO must be a whole number.", parent=self.window)
-                return
-            if iso_value <= 0:
-                messagebox.showerror("Validation Error", "ISO must be greater than zero.", parent=self.window)
+                ValidationUtils.parse_optional_iso(iso_raw)
+            except ValueError as exc:
+                messagebox.showerror("Validation Error", str(exc), parent=self.window)
                 return
 
         self.result = {
@@ -103,6 +158,9 @@ class FilmTrackerApp:
         "save_next_clear_notes": "true",
         "enable_ctrl_enter_save_next": "true",
         "show_collection_metadata_header": "true",
+        "camera_presets": "",
+        "lens_presets": "",
+        "last_selected_collection_id": "",
     }
 
     def __init__(self, root: tk.Tk) -> None:
@@ -115,11 +173,12 @@ class FilmTrackerApp:
         self.preferences = dict(self.DEFAULT_PREFERENCES)
         self._load_preferences()
 
-        self.selected_collection_id: int | None = None
+        last_selected_id = self.preferences.get("last_selected_collection_id", "").strip()
+        self.selected_collection_id: int | None = int(last_selected_id) if last_selected_id.isdigit() else None
         self.selected_shot_id: int | None = None
         self.active_status_filter = tk.StringVar(value=self.preferences["default_status_filter"])
 
-        self.collection_map: dict[str, int] = {}
+        self.collection_ids_by_index: list[int] = []
 
         self._build_ui()
         self.root.bind("<Control-Return>", self._on_save_next_shortcut)
@@ -173,6 +232,20 @@ class FilmTrackerApp:
     def _preference_bool(self, key: str) -> bool:
         return self.preferences.get(key, "false").strip().lower() == "true"
 
+    def _get_preset_list(self, key: str) -> list[str]:
+        raw = self.preferences.get(key, "")
+        values = [part.strip() for part in raw.split("|")]
+        return [value for value in values if value]
+
+    def _set_preset_list(self, key: str, values: list[str]) -> None:
+        normalized = [value.strip() for value in values if value.strip()]
+        self.preferences[key] = "|".join(normalized)
+
+    def _remember_selected_collection(self) -> None:
+        value = "" if self.selected_collection_id is None else str(self.selected_collection_id)
+        self.preferences["last_selected_collection_id"] = value
+        self.db.set_preference("last_selected_collection_id", value)
+
     def _build_collection_panel(self, parent: ttk.Frame) -> None:
         panel = ttk.LabelFrame(parent, text="Roll Collections", padding=10)
         panel.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
@@ -192,10 +265,14 @@ class FilmTrackerApp:
         buttons.columnconfigure(0, weight=1)
         buttons.columnconfigure(1, weight=1)
         buttons.columnconfigure(2, weight=1)
+        buttons.columnconfigure(3, weight=1)
+        buttons.columnconfigure(4, weight=1)
 
         ttk.Button(buttons, text="Add", command=self._add_collection).grid(row=0, column=0, sticky="ew", padx=(0, 4))
         ttk.Button(buttons, text="Edit", command=self._edit_collection).grid(row=0, column=1, sticky="ew", padx=4)
         ttk.Button(buttons, text="Delete", command=self._delete_collection).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        ttk.Button(buttons, text="Import", command=self._import_shots_csv).grid(row=1, column=0, columnspan=2, sticky="ew", padx=(0, 4), pady=(6, 0))
+        ttk.Button(buttons, text="Export", command=self._export_shots_csv).grid(row=1, column=2, columnspan=3, sticky="ew", padx=(4, 0), pady=(6, 0))
 
     def _build_shot_panel(self, parent: ttk.Frame) -> None:
         panel = ttk.LabelFrame(parent, text="Shots", padding=10)
@@ -208,9 +285,11 @@ class FilmTrackerApp:
         top_bar.columnconfigure(0, weight=1)
 
         self.collection_hint_var = tk.StringVar(value="Select or add a roll collection to begin.")
+        self.collection_meta_var = tk.StringVar(value="")
         ttk.Label(top_bar, textvariable=self.collection_hint_var).grid(row=0, column=0, sticky="w")
+        ttk.Label(top_bar, textvariable=self.collection_meta_var, foreground="#4F4F4F").grid(row=1, column=0, sticky="w", pady=(2, 0))
 
-        ttk.Label(top_bar, text="Status Filter:").grid(row=0, column=1, sticky="e", padx=(8, 4))
+        ttk.Label(top_bar, text="Status Filter:").grid(row=0, column=1, rowspan=2, sticky="e", padx=(8, 4))
         self.status_filter_combo = ttk.Combobox(
             top_bar,
             textvariable=self.active_status_filter,
@@ -218,7 +297,7 @@ class FilmTrackerApp:
             state="readonly",
             width=12,
         )
-        self.status_filter_combo.grid(row=0, column=2, sticky="e")
+        self.status_filter_combo.grid(row=0, column=2, rowspan=2, sticky="e")
         if self.active_status_filter.get() not in ("all", *self.STATUS_VALUES):
             self.active_status_filter.set("all")
         self.status_filter_combo.bind("<<ComboboxSelected>>", self._on_status_filter_changed)
@@ -243,6 +322,12 @@ class FilmTrackerApp:
         self.shot_tree.column("fstop", width=90, anchor="center")
         self.shot_tree.column("date", width=120, anchor="center")
         self.shot_tree.column("notes", width=250, anchor="w")
+
+        self.shot_tree.tag_configure("shot", background="#FFF8E6")
+        self.shot_tree.tag_configure("developed", background="#EAF7EA")
+        self.shot_tree.tag_configure("scanned", background="#E8F4FF")
+        self.shot_tree.tag_configure("edited", background="#F4ECFF")
+        self.shot_tree.tag_configure("printed", background="#FFECEA")
 
         self.shot_tree.grid(row=1, column=0, sticky="nsew")
         self.shot_tree.bind("<<TreeviewSelect>>", self._on_shot_selected)
@@ -294,7 +379,12 @@ class FilmTrackerApp:
 
         ttk.Label(form, text="Shot Date (YYYY-MM-DD)").grid(row=0, column=3, sticky="w")
         self.date_var = tk.StringVar()
-        self.date_entry = ttk.Entry(form, textvariable=self.date_var)
+        self.date_entry = DateEntry(
+            form,
+            textvariable=self.date_var,
+            date_pattern="yyyy-mm-dd",
+            width=12,
+        )
         self.date_entry.grid(row=1, column=3, sticky="ew", padx=(0, 8))
 
         ttk.Label(form, text="Notes").grid(row=0, column=4, sticky="w")
@@ -358,6 +448,8 @@ class FilmTrackerApp:
         clear_notes_var = tk.BooleanVar(value=self._preference_bool("save_next_clear_notes"))
         ctrl_enter_var = tk.BooleanVar(value=self._preference_bool("enable_ctrl_enter_save_next"))
         show_metadata_var = tk.BooleanVar(value=self._preference_bool("show_collection_metadata_header"))
+        camera_presets_var = tk.StringVar(value=", ".join(self._get_preset_list("camera_presets")))
+        lens_presets_var = tk.StringVar(value=", ".join(self._get_preset_list("lens_presets")))
 
         ttk.Label(general_tab, text="Default shot status for new entries").grid(row=0, column=0, sticky="w")
         ttk.Combobox(
@@ -410,6 +502,11 @@ class FilmTrackerApp:
             text="Metadata helps identify film stock, camera, and lens context while reviewing shots.",
         ).grid(row=1, column=0, sticky="w")
 
+        ttk.Label(metadata_tab, text="Camera presets (comma-separated)").grid(row=2, column=0, sticky="w", pady=(12, 0))
+        ttk.Entry(metadata_tab, textvariable=camera_presets_var, width=52).grid(row=3, column=0, sticky="ew", pady=(4, 8))
+        ttk.Label(metadata_tab, text="Lens presets (comma-separated)").grid(row=4, column=0, sticky="w")
+        ttk.Entry(metadata_tab, textvariable=lens_presets_var, width=52).grid(row=5, column=0, sticky="ew", pady=(4, 0))
+
         ttk.Label(workflow_tab, text="Task Tips").grid(row=0, column=0, sticky="w")
         ttk.Label(
             workflow_tab,
@@ -435,6 +532,10 @@ class FilmTrackerApp:
             self.preferences["save_next_clear_notes"] = "true" if clear_notes_var.get() else "false"
             self.preferences["enable_ctrl_enter_save_next"] = "true" if ctrl_enter_var.get() else "false"
             self.preferences["show_collection_metadata_header"] = "true" if show_metadata_var.get() else "false"
+            camera_presets = [part.strip() for part in camera_presets_var.get().split(",") if part.strip()]
+            lens_presets = [part.strip() for part in lens_presets_var.get().split(",") if part.strip()]
+            self._set_preset_list("camera_presets", camera_presets)
+            self._set_preset_list("lens_presets", lens_presets)
             self._save_preferences()
 
             self.active_status_filter.set(default_filter_var.get())
@@ -448,18 +549,16 @@ class FilmTrackerApp:
         ttk.Button(buttons, text="Save", command=apply_preferences).grid(row=0, column=1)
 
     def _parse_optional_iso(self, value: str | None) -> int | None:
-        if value is None:
-            return None
-        stripped = value.strip()
-        if not stripped:
-            return None
-        parsed = int(stripped)
-        if parsed <= 0:
-            raise ValueError("ISO must be a positive number.")
-        return parsed
+        return ValidationUtils.parse_optional_iso(value)
 
     def _prompt_collection_details(self, title: str, initial: dict[str, str]) -> dict[str, str] | None:
-        dialog = CollectionMetadataDialog(self.root, title, initial)
+        dialog = CollectionMetadataDialog(
+            self.root,
+            title,
+            initial,
+            self._get_preset_list("camera_presets"),
+            self._get_preset_list("lens_presets"),
+        )
         result = dialog.show()
         if result is None:
             return None
@@ -473,17 +572,17 @@ class FilmTrackerApp:
         result["iso"] = "" if iso_value is None else str(iso_value)
         return result
 
-    def _format_collection_hint(self, collection_name: str, shots_count: int) -> str:
+    def _format_collection_hint(self, collection_name: str, shots_count: int) -> tuple[str, str]:
         if self.selected_collection_id is None:
-            return "Select or add a roll collection to begin."
+            return "Select or add a roll collection to begin.", ""
 
         collection = self.db.get_collection(self.selected_collection_id)
         if collection is None:
-            return f"Collection: {collection_name} ({shots_count} shot(s))"
+            return f"Collection: {collection_name} ({shots_count} shot(s))", ""
 
         details: list[str] = []
         if not self._preference_bool("show_collection_metadata_header"):
-            return f"Collection: {collection_name} ({shots_count} shot(s))"
+            return f"Collection: {collection_name} ({shots_count} shot(s))", ""
 
         stock = (collection["film_stock"] or "").strip()
         if stock:
@@ -497,28 +596,33 @@ class FilmTrackerApp:
         if lens:
             details.append(lens)
 
-        detail_text = f" | {' | '.join(details)}" if details else ""
-        return f"Collection: {collection_name} ({shots_count} shot(s)){detail_text}"
+        detail_text = " | ".join(details)
+        return f"Collection: {collection_name} ({shots_count} shot(s))", detail_text
 
     # Collections
     def _load_collections(self) -> None:
         collections = self.db.list_collections()
 
         self.collection_list.delete(0, tk.END)
-        self.collection_map.clear()
+        self.collection_ids_by_index.clear()
 
         for row in collections:
-            label = row["name"]
+            label = str(row["name"])
+            stock = (row["film_stock"] or "").strip()
+            iso = row["iso"]
+            if stock:
+                label = f"{label} - {stock}"
+            if iso is not None:
+                label = f"{label} (ISO {iso})"
             self.collection_list.insert(tk.END, label)
-            self.collection_map[label] = int(row["id"])
+            self.collection_ids_by_index.append(int(row["id"]))
 
         if self.selected_collection_id is not None:
             self._restore_collection_selection()
 
     def _restore_collection_selection(self) -> None:
-        for idx in range(self.collection_list.size()):
-            label = self.collection_list.get(idx)
-            if self.collection_map.get(label) == self.selected_collection_id:
+        for idx, collection_id in enumerate(self.collection_ids_by_index):
+            if collection_id == self.selected_collection_id:
                 self.collection_list.selection_clear(0, tk.END)
                 self.collection_list.selection_set(idx)
                 self.collection_list.activate(idx)
@@ -526,17 +630,21 @@ class FilmTrackerApp:
                 return
 
         self.selected_collection_id = None
+        self._remember_selected_collection()
         self._load_shots_for_selected_collection()
 
     def _get_selected_collection_id(self) -> int | None:
         selection = self.collection_list.curselection()
         if not selection:
             return None
-        label = self.collection_list.get(selection[0])
-        return self.collection_map.get(label)
+        selected_index = selection[0]
+        if selected_index >= len(self.collection_ids_by_index):
+            return None
+        return self.collection_ids_by_index[selected_index]
 
     def _on_collection_selected(self, _event: object) -> None:
         self.selected_collection_id = self._get_selected_collection_id()
+        self._remember_selected_collection()
         self.selected_shot_id = None
         self._clear_shot_form()
         self._load_shots_for_selected_collection()
@@ -572,6 +680,7 @@ class FilmTrackerApp:
             return
 
         self.selected_collection_id = new_id
+        self._remember_selected_collection()
         self._load_collections()
         self._load_shots_for_selected_collection()
 
@@ -617,6 +726,7 @@ class FilmTrackerApp:
             return
 
         self.selected_collection_id = collection_id
+        self._remember_selected_collection()
         self._load_collections()
         self._load_shots_for_selected_collection()
 
@@ -641,10 +751,131 @@ class FilmTrackerApp:
             return
 
         self.selected_collection_id = None
+        self._remember_selected_collection()
         self.selected_shot_id = None
         self._clear_shot_form()
         self._load_collections()
         self._load_shots_for_selected_collection()
+
+    def _export_shots_csv(self) -> None:
+        collection_id = self._get_selected_collection_id()
+        if collection_id is None:
+            messagebox.showinfo("Select Collection", "Select a collection to export.")
+            return
+
+        row = self.db.get_collection(collection_id)
+        collection_name = str(row["name"]) if row is not None else "collection"
+        suggested_name = collection_name.replace(" ", "_").lower()
+
+        file_path = filedialog.asksaveasfilename(
+            title="Export Shots to CSV",
+            defaultextension=".csv",
+            initialfile=f"{suggested_name}_shots.csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        rows = self.db.export_shots_for_collection(collection_id)
+        fieldnames = ["frame_number", "status", "shutter_speed", "f_stop", "shot_date", "notes", "created_at"]
+
+        try:
+            with open(file_path, "w", newline="", encoding="utf-8") as csv_file:
+                writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+                writer.writeheader()
+                for row_data in rows:
+                    writer.writerow({
+                        "frame_number": row_data["frame_number"] if row_data["frame_number"] is not None else "",
+                        "status": row_data["status"] or "shot",
+                        "shutter_speed": row_data["shutter_speed"] or "",
+                        "f_stop": row_data["f_stop"] or "",
+                        "shot_date": row_data["shot_date"] or "",
+                        "notes": row_data["notes"] or "",
+                        "created_at": row_data["created_at"] or "",
+                    })
+        except Exception as exc:
+            messagebox.showerror("Export Error", f"Could not export CSV.\n\n{exc}")
+            return
+
+        messagebox.showinfo("Export Complete", f"Exported {len(rows)} shot(s) to:\n{file_path}")
+
+    def _import_shots_csv(self) -> None:
+        collection_id = self._get_selected_collection_id()
+        if collection_id is None:
+            messagebox.showinfo("Select Collection", "Select a collection before importing shots.")
+            return
+
+        file_path = filedialog.askopenfilename(
+            title="Import Shots from CSV",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        parsed_rows: list[dict[str, object]] = []
+        parse_errors: list[str] = []
+        required_columns = {"shutter_speed", "f_stop"}
+
+        try:
+            with open(file_path, "r", newline="", encoding="utf-8") as csv_file:
+                reader = csv.DictReader(csv_file)
+                headers = set(reader.fieldnames or [])
+                missing = required_columns - headers
+                if missing:
+                    messagebox.showerror(
+                        "Import Error",
+                        f"CSV is missing required columns: {', '.join(sorted(missing))}",
+                    )
+                    return
+
+                for index, record in enumerate(reader, start=2):
+                    try:
+                        shutter = (record.get("shutter_speed") or "").strip()
+                        f_stop = (record.get("f_stop") or "").strip()
+                        if not shutter or not f_stop:
+                            raise ValueError("Shutter speed and f-stop are required.")
+
+                        frame_value = ValidationUtils.parse_optional_frame(record.get("frame_number"))
+                        shot_date = ValidationUtils.parse_optional_date(record.get("shot_date"))
+                        status = (record.get("status") or "shot").strip().lower()
+                        if status not in self.STATUS_VALUES:
+                            raise ValueError(f"Invalid status '{status}'.")
+
+                        parsed_rows.append(
+                            {
+                                "shutter_speed": shutter,
+                                "f_stop": f_stop,
+                                "frame_number": frame_value,
+                                "shot_date": shot_date,
+                                "notes": ValidationUtils.normalize_optional_text(record.get("notes")),
+                                "status": status,
+                            }
+                        )
+                    except ValueError as exc:
+                        parse_errors.append(f"Line {index}: {exc}")
+        except Exception as exc:
+            messagebox.showerror("Import Error", f"Could not read CSV file.\n\n{exc}")
+            return
+
+        if not parsed_rows and not parse_errors:
+            messagebox.showinfo("Import Shots", "No rows found to import.")
+            return
+
+        inserted_count, db_errors = self.db.bulk_insert_shots(collection_id, parsed_rows)
+        self._load_shots_for_selected_collection()
+
+        messages: list[str] = [f"Imported {inserted_count} shot(s)."]
+        if parse_errors:
+            messages.append(f"Skipped {len(parse_errors)} row(s) due to validation errors.")
+        if db_errors:
+            messages.append(f"Skipped {len(db_errors)} row(s) due to database conflicts.")
+
+        detail_lines = parse_errors[:5] + db_errors[:5]
+        detail_text = ""
+        if detail_lines:
+            detail_text = "\n\nDetails (first 5):\n" + "\n".join(detail_lines)
+
+        messagebox.showinfo("Import Complete", "\n".join(messages) + detail_text)
 
     # Shots
     def _load_shots_for_selected_collection(self) -> None:
@@ -652,6 +883,7 @@ class FilmTrackerApp:
 
         if self.selected_collection_id is None:
             self.collection_hint_var.set("Select or add a roll collection to begin.")
+            self.collection_meta_var.set("")
             return
 
         selected_label = ""
@@ -662,7 +894,9 @@ class FilmTrackerApp:
         active_filter = self.active_status_filter.get()
         selected_status = None if active_filter == "all" else active_filter
         shots = self.db.list_shots_for_collection(self.selected_collection_id, selected_status)
-        self.collection_hint_var.set(self._format_collection_hint(selected_label, len(shots)))
+        headline, metadata = self._format_collection_hint(selected_label, len(shots))
+        self.collection_hint_var.set(headline)
+        self.collection_meta_var.set(metadata)
 
         for shot in shots:
             shot_id = int(shot["id"])
@@ -681,6 +915,7 @@ class FilmTrackerApp:
                     date,
                     notes,
                 ),
+                tags=(shot["status"] or "shot",),
             )
 
     def _on_shot_selected(self, _event: object) -> None:
@@ -721,23 +956,29 @@ class FilmTrackerApp:
         frame_value: int | None = None
         if frame_raw:
             try:
-                frame_value = int(frame_raw)
-            except ValueError:
-                messagebox.showerror("Validation Error", "Frame number must be a whole number.")
+                frame_value = ValidationUtils.parse_optional_frame(frame_raw)
+            except ValueError as exc:
+                messagebox.showerror("Validation Error", str(exc))
                 return None
 
-            if frame_value <= 0:
-                messagebox.showerror("Validation Error", "Frame number must be greater than zero.")
+            if self.selected_collection_id is not None and self.db.frame_number_exists(
+                self.selected_collection_id,
+                frame_value,
+                exclude_shot_id=self.selected_shot_id,
+            ):
+                messagebox.showerror(
+                    "Validation Error",
+                    f"Frame {frame_value} already exists in this collection.",
+                )
                 return None
 
         shot_date: str | None = None
         if shot_date_raw:
             try:
-                datetime.strptime(shot_date_raw, "%Y-%m-%d")
+                shot_date = ValidationUtils.parse_optional_date(shot_date_raw)
             except ValueError:
                 messagebox.showerror("Validation Error", "Shot date must be in YYYY-MM-DD format.")
                 return None
-            shot_date = shot_date_raw
 
         if status_raw not in self.STATUS_VALUES:
             messagebox.showerror("Validation Error", "Invalid shot status.")
@@ -819,8 +1060,8 @@ class FilmTrackerApp:
             return
 
         try:
-            for shot_id in selection:
-                self.db.update_shot_status(int(shot_id), status)
+            shot_ids = [int(shot_id) for shot_id in selection]
+            self.db.update_shot_status_many(shot_ids, status)
         except Exception as exc:
             messagebox.showerror("Database Error", f"Could not update statuses.\n\n{exc}")
             return
@@ -848,8 +1089,8 @@ class FilmTrackerApp:
             return
 
         try:
-            for shot_id in visible_ids:
-                self.db.update_shot_status(int(shot_id), status)
+            shot_ids = [int(shot_id) for shot_id in visible_ids]
+            self.db.update_shot_status_many(shot_ids, status)
         except Exception as exc:
             messagebox.showerror("Database Error", f"Could not update statuses.\n\n{exc}")
             return

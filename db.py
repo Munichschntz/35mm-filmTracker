@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 
 class FilmDatabase:
-    LATEST_SCHEMA_VERSION = 4
+    LATEST_SCHEMA_VERSION = 5
 
     def __init__(self, db_path: str = "data/film_tracker.db") -> None:
         self.db_path = Path(db_path)
@@ -39,6 +39,11 @@ class FilmDatabase:
             if current_version < 4:
                 self._migrate_to_v4(conn)
                 self._set_schema_version(conn, 4)
+                current_version = 4
+
+            if current_version < 5:
+                self._migrate_to_v5(conn)
+                self._set_schema_version(conn, 5)
 
     @staticmethod
     def _create_base_schema(conn: sqlite3.Connection) -> None:
@@ -115,6 +120,22 @@ class FilmDatabase:
             )
             """
         )
+
+    @staticmethod
+    def _migrate_to_v5(conn: sqlite3.Connection) -> None:
+        default_preferences = {
+            "camera_presets": "",
+            "lens_presets": "",
+            "last_selected_collection_id": "",
+        }
+        for key, value in default_preferences.items():
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO preferences (key, value)
+                VALUES (?, ?)
+                """,
+                (key, value),
+            )
 
     # Collection operations
     def list_collections(self) -> list[sqlite3.Row]:
@@ -227,7 +248,7 @@ class FilmDatabase:
 
             if status is not None:
                 query += " AND status = ?"
-                params = (collection_id, status)
+                params += (status,)
 
             query += """
                 ORDER BY
@@ -252,6 +273,28 @@ class FilmDatabase:
             row = cursor.fetchone()
             max_frame = row["max_frame"] if row else None
             return int(max_frame) + 1 if max_frame is not None else 1
+
+    def frame_number_exists(
+        self,
+        collection_id: int,
+        frame_number: int,
+        exclude_shot_id: Optional[int] = None,
+    ) -> bool:
+        with self._connect() as conn:
+            query = """
+                SELECT 1
+                FROM shots
+                WHERE collection_id = ?
+                  AND frame_number = ?
+            """
+            params: tuple[Any, ...] = (collection_id, frame_number)
+            if exclude_shot_id is not None:
+                query += " AND id != ?"
+                params += (exclude_shot_id,)
+
+            query += " LIMIT 1"
+            row = conn.execute(query, params).fetchone()
+            return row is not None
 
     def create_shot(
         self,
@@ -322,6 +365,16 @@ class FilmDatabase:
                 (status, shot_id),
             )
 
+    def update_shot_status_many(self, shot_ids: list[int], status: str) -> int:
+        if not shot_ids:
+            return 0
+
+        placeholders = ", ".join("?" for _ in shot_ids)
+        query = f"UPDATE shots SET status = ? WHERE id IN ({placeholders})"
+        with self._connect() as conn:
+            cursor = conn.execute(query, (status, *shot_ids))
+            return int(cursor.rowcount)
+
     def delete_shot(self, shot_id: int) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM shots WHERE id = ?", (shot_id,))
@@ -346,6 +399,67 @@ class FilmDatabase:
             )
             row = cursor.fetchone()
             return int(row["count"]) if row else 0
+
+    def export_shots_for_collection(self, collection_id: int) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                SELECT
+                    frame_number,
+                    status,
+                    shutter_speed,
+                    f_stop,
+                    shot_date,
+                    notes,
+                    created_at
+                FROM shots
+                WHERE collection_id = ?
+                ORDER BY
+                    CASE WHEN frame_number IS NULL THEN 1 ELSE 0 END,
+                    frame_number,
+                    id
+                """,
+                (collection_id,),
+            )
+            return cursor.fetchall()
+
+    def bulk_insert_shots(
+        self,
+        collection_id: int,
+        shots: list[dict[str, Any]],
+    ) -> tuple[int, list[str]]:
+        inserted = 0
+        errors: list[str] = []
+        with self._connect() as conn:
+            for index, shot in enumerate(shots, start=1):
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO shots (
+                            collection_id,
+                            shutter_speed,
+                            f_stop,
+                            frame_number,
+                            shot_date,
+                            notes,
+                            status
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            collection_id,
+                            str(shot["shutter_speed"]).strip(),
+                            str(shot["f_stop"]).strip(),
+                            shot.get("frame_number"),
+                            shot.get("shot_date"),
+                            shot.get("notes"),
+                            shot.get("status", "shot"),
+                        ),
+                    )
+                    inserted += 1
+                except sqlite3.IntegrityError as exc:
+                    errors.append(f"Row {index}: {exc}")
+
+        return inserted, errors
 
     # Preferences
     def get_preferences(self) -> dict[str, str]:

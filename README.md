@@ -27,6 +27,12 @@ This repository now includes a Tkinter desktop app for tracking film shots per r
 - Bulk status update actions (`Mark Selected`, `Mark Visible`)
 - Quick entry support with `Save + Next` and keyboard shortcut `Ctrl+Enter`
 - Preferences window (`App` -> `Preferences`) with tabbed settings for defaults, quick entry, metadata display, and workflow tips
+- Camera and lens presets (configured in Preferences, reused in collection metadata dialog)
+- Date picker (`tkcalendar`) for shot date entry
+- CSV export for collection shots
+- CSV import for batch shot insertion with row-level error summary
+- Status-colored shot rows in the table
+- Last selected collection restore on app startup
 - SQLite persistence at `data/film_tracker.db`
 - Delete protection prompts for collections and shots
 - Automatic schema migration support (uses SQLite `PRAGMA user_version`)
@@ -34,13 +40,19 @@ This repository now includes a Tkinter desktop app for tracking film shots per r
 ### Run
 
 1. Ensure Python 3.10+ is installed.
-2. Start the app:
+2. Install dependencies:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+3. Start the app:
 
 ```bash
 python3 film_tracker.py
 ```
 
-No third-party packages are required (`tkinter` and `sqlite3` are from the Python standard library).
+Dependencies: `tkcalendar` (UI date picker). `tkinter` and `sqlite3` are from the Python standard library.
 
 ### Data Model
 
@@ -79,6 +91,9 @@ Frame numbers are unique within the same collection when provided.
 8. Select an existing shot to edit, then click `Save Shot`.
 9. Use `Delete Shot` or `Delete` (collection) to remove data.
 10. Open `App` -> `Preferences` to customize default status/filter and quick-entry behavior.
+11. Configure camera/lens presets in `App` -> `Preferences` -> `Metadata` and reuse them in add/edit metadata dialogs.
+12. Use `Export` in the collections panel to save shots as CSV.
+13. Use `Import` in the collections panel to bulk insert shots from CSV.
 
 ### Manual Smoke Test Checklist
 
@@ -88,3 +103,6 @@ Frame numbers are unique within the same collection when provided.
 4. Edit one shot and verify values update.
 5. Delete a shot and verify removal.
 6. Delete a collection and verify associated shots are removed.
+7. Set camera/lens presets in Preferences and verify they appear in the collection metadata dialog.
+8. Export a populated collection to CSV and verify row contents.
+9. Import the CSV into another collection and verify inserted row count and conflict handling.
