@@ -53,6 +53,122 @@ class ValidationUtils:
         return stripped if stripped else None
 
 
+class CameraLensManagerDialog:
+    def __init__(
+        self,
+        parent: tk.Tk,
+        title: str,
+        items: list[str],
+    ) -> None:
+        self.parent = parent
+        self.result: list[str] | None = None
+
+        self.window = tb.Toplevel(parent)
+        self.window.title(title)
+        self.window.transient(parent)
+        self.window.grab_set()
+        self.window.resizable(True, True)
+        self.window.geometry("400x350")
+
+        body = ttk.Frame(self.window, padding=12)
+        body.grid(row=0, column=0, sticky="nsew")
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(1, weight=1)
+        self.window.columnconfigure(0, weight=1)
+        self.window.rowconfigure(0, weight=1)
+
+        ttk.Label(body, text=f"Manage {title}").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+
+        # Listbox with scrollbar
+        list_frame = ttk.Frame(body)
+        list_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+
+        self.listbox = tk.Listbox(list_frame, height=10)
+        self.listbox.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.listbox.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.listbox.configure(yscrollcommand=scrollbar.set)
+
+        # Populate listbox with items
+        for item in items:
+            self.listbox.insert(tk.END, item)
+
+        # Add item section
+        add_frame = ttk.Frame(body)
+        add_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        add_frame.columnconfigure(0, weight=1)
+
+        ttk.Label(add_frame, text="Add new:").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self.new_item_var = tk.StringVar()
+        self.new_item_entry = ttk.Entry(add_frame, textvariable=self.new_item_var, width=40)
+        self.new_item_entry.grid(row=1, column=0, sticky="ew")
+        self.new_item_entry.focus_set()
+
+        # Buttons
+        button_frame = ttk.Frame(body)
+        button_frame.grid(row=3, column=0, columnspan=2, sticky="ew")
+        button_frame.columnconfigure(0, weight=1)
+        button_frame.columnconfigure(1, weight=1)
+
+        ttk.Button(button_frame, text="Add", command=self._add_item).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(button_frame, text="Remove Selected", command=self._remove_item).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+
+        dialog_buttons = ttk.Frame(body)
+        dialog_buttons.grid(row=4, column=0, columnspan=2, sticky="e", pady=(12, 0))
+
+        ttk.Button(dialog_buttons, text="Cancel", command=self._cancel).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(dialog_buttons, text="OK", command=self._ok).grid(row=0, column=1)
+
+        self.window.bind("<Return>", self._on_return)
+        self.window.bind("<Escape>", self._on_escape)
+
+    def _on_return(self, _event: tk.Event) -> None:
+        # Only add if we're in the entry field, don't save on return
+        if self.window.focus_get() == self.new_item_entry:
+            self._add_item()
+
+    def _on_escape(self, _event: tk.Event) -> None:
+        self._cancel()
+
+    def _add_item(self) -> None:
+        new_item = self.new_item_var.get().strip()
+        if not new_item:
+            messagebox.showwarning("Empty Item", "Please enter a name before adding.", parent=self.window)
+            return
+
+        # Check for duplicates
+        existing_items = self.listbox.get(0, tk.END)
+        if new_item in existing_items:
+            messagebox.showwarning("Duplicate", f"'{new_item}' already exists.", parent=self.window)
+            return
+
+        self.listbox.insert(tk.END, new_item)
+        self.new_item_var.set("")
+        self.new_item_entry.focus_set()
+
+    def _remove_item(self) -> None:
+        selection = self.listbox.curselection()
+        if not selection:
+            messagebox.showinfo("No Selection", "Please select an item to remove.", parent=self.window)
+            return
+        self.listbox.delete(selection[0])
+
+    def _cancel(self) -> None:
+        self.result = None
+        self.window.destroy()
+
+    def _ok(self) -> None:
+        self.result = list(self.listbox.get(0, tk.END))
+        self.window.destroy()
+
+    def show(self) -> list[str] | None:
+        self.parent.wait_window(self.window)
+        return self.result
+
+
 class CollectionMetadataDialog:
     def __init__(
         self,
@@ -259,6 +375,22 @@ class FilmTrackerApp:
         value = "" if self.selected_collection_id is None else str(self.selected_collection_id)
         self.preferences["last_selected_collection_id"] = value
         self.db.set_preference("last_selected_collection_id", value)
+    def _manage_camera_presets(self, var: tk.StringVar) -> None:
+        current_list = self._get_preset_list("camera_presets")
+        dialog = CameraLensManagerDialog(self.root, "Cameras", current_list)
+        result = dialog.show()
+        if result is not None:
+            self._set_preset_list("camera_presets", result)
+            var.set(", ".join(result))
+
+    def _manage_lens_presets(self, var: tk.StringVar) -> None:
+        current_list = self._get_preset_list("lens_presets")
+        dialog = CameraLensManagerDialog(self.root, "Lenses", current_list)
+        result = dialog.show()
+        if result is not None:
+            self._set_preset_list("lens_presets", result)
+            var.set(", ".join(result))
+
 
     def _build_collection_panel(self, parent: ttk.Frame) -> None:
         panel = ttk.LabelFrame(parent, text="Roll Collections", padding=10)
@@ -523,10 +655,29 @@ class FilmTrackerApp:
             text="Metadata helps identify film stock, camera, and lens context while reviewing shots.",
         ).grid(row=1, column=0, sticky="w")
 
-        ttk.Label(metadata_tab, text="Camera presets (comma-separated)").grid(row=2, column=0, sticky="w", pady=(12, 0))
-        ttk.Entry(metadata_tab, textvariable=camera_presets_var, width=52).grid(row=3, column=0, sticky="ew", pady=(4, 8))
-        ttk.Label(metadata_tab, text="Lens presets (comma-separated)").grid(row=4, column=0, sticky="w")
-        ttk.Entry(metadata_tab, textvariable=lens_presets_var, width=52).grid(row=5, column=0, sticky="ew", pady=(4, 0))
+        ttk.Label(metadata_tab, text="Camera presets").grid(row=2, column=0, sticky="w", pady=(12, 0))
+        camera_preset_frame = ttk.Frame(metadata_tab)
+        camera_preset_frame.grid(row=3, column=0, sticky="ew", pady=(4, 8))
+        camera_preset_frame.columnconfigure(0, weight=1)
+        ttk.Entry(camera_preset_frame, textvariable=camera_presets_var, width=40).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(
+            camera_preset_frame,
+            text="Manage",
+            command=lambda: self._manage_camera_presets(camera_presets_var),
+            width=10,
+        ).grid(row=0, column=1, sticky="ew")
+
+        ttk.Label(metadata_tab, text="Lens presets").grid(row=4, column=0, sticky="w")
+        lens_preset_frame = ttk.Frame(metadata_tab)
+        lens_preset_frame.grid(row=5, column=0, sticky="ew", pady=(4, 0))
+        lens_preset_frame.columnconfigure(0, weight=1)
+        ttk.Entry(lens_preset_frame, textvariable=lens_presets_var, width=40).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(
+            lens_preset_frame,
+            text="Manage",
+            command=lambda: self._manage_lens_presets(lens_presets_var),
+            width=10,
+        ).grid(row=0, column=1, sticky="ew")
 
         ttk.Label(workflow_tab, text="Task Tips").grid(row=0, column=0, sticky="w")
         ttk.Label(
