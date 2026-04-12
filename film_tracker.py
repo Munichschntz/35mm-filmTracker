@@ -65,7 +65,7 @@ class CollectionMetadataDialog:
         self.parent = parent
         self.result: dict[str, str] | None = None
 
-        self.window = tk.Toplevel(parent)
+        self.window = tb.Toplevel(parent)
         self.window.title(title)
         self.window.transient(parent)
         self.window.grab_set()
@@ -180,7 +180,6 @@ class FilmTrackerApp:
         self.selected_shot_id: int | None = None
         self.active_status_filter = tk.StringVar(value=self.preferences["default_status_filter"])
 
-        self.collection_ids_by_index: list[int] = []
         self.collection_id_to_item: dict[int, str] = {}
         self.collection_id_to_label: dict[int, str] = {}
 
@@ -409,9 +408,8 @@ class FilmTrackerApp:
         self.date_entry.grid(row=1, column=3, sticky="ew", padx=(0, 8))
 
         ttk.Label(form, text="Notes").grid(row=0, column=4, columnspan=4, sticky="w")
-        self.notes_var = tk.StringVar()
-        self.notes_entry = ttk.Entry(form, textvariable=self.notes_var, style="Large.TEntry")
-        self.notes_entry.grid(row=1, column=4, columnspan=4, sticky="ew")
+        self.notes_text = tk.Text(form, height=3, wrap="word", font=self.input_font)
+        self.notes_text.grid(row=1, column=4, columnspan=4, sticky="ew")
 
         ttk.Label(form, text="Status").grid(row=2, column=0, sticky="w", pady=(10, 0))
         self.status_var = tk.StringVar(value="shot")
@@ -442,7 +440,7 @@ class FilmTrackerApp:
         self._load_shots_for_selected_collection()
 
     def _open_preferences_window(self) -> None:
-        window = tk.Toplevel(self.root)
+        window = tb.Toplevel(self.root)
         window.title("Preferences")
         window.transient(self.root)
         window.grab_set()
@@ -627,7 +625,6 @@ class FilmTrackerApp:
         collections = self.db.list_collections()
 
         self.collection_list.delete(*self.collection_list.get_children())
-        self.collection_ids_by_index.clear()
         self.collection_id_to_item.clear()
         self.collection_id_to_label.clear()
 
@@ -641,7 +638,6 @@ class FilmTrackerApp:
                 label = f"{label} (ISO {iso})"
             collection_id = int(row["id"])
             item = self.collection_list.insert("", tk.END, values=(label,))
-            self.collection_ids_by_index.append(collection_id)
             self.collection_id_to_item[collection_id] = item
             self.collection_id_to_label[collection_id] = label
 
@@ -967,15 +963,23 @@ class FilmTrackerApp:
         self.fstop_var.set(row["f_stop"])
         self.frame_var.set("" if row["frame_number"] is None else str(row["frame_number"]))
         self.date_var.set(row["shot_date"] or "")
-        self.notes_var.set(row["notes"] or "")
+        self._set_notes_text(row["notes"] or "")
         self.status_var.set(row["status"] or "shot")
+
+    def _get_notes_text(self) -> str:
+        return self.notes_text.get("1.0", "end-1c").strip()
+
+    def _set_notes_text(self, value: str) -> None:
+        self.notes_text.delete("1.0", tk.END)
+        if value:
+            self.notes_text.insert("1.0", value)
 
     def _validate_shot_fields(self) -> tuple[str, str, int | None, str | None, str | None, str] | None:
         shutter = self.shutter_var.get().strip()
         f_stop = self.fstop_var.get().strip()
         frame_raw = self.frame_var.get().strip()
         shot_date_raw = self.date_var.get().strip()
-        notes_raw = self.notes_var.get().strip()
+        notes_raw = self._get_notes_text()
         status_raw = self.status_var.get().strip()
 
         if not shutter:
@@ -1070,9 +1074,9 @@ class FilmTrackerApp:
             self.fstop_var.set(f_stop)
             self.date_var.set(shot_date or "")
             if self._preference_bool("save_next_clear_notes"):
-                self.notes_var.set("")
+                self._set_notes_text("")
             else:
-                self.notes_var.set(notes or "")
+                self._set_notes_text(notes or "")
             self.status_var.set(status)
             self.frame_entry.focus_set()
             self.frame_entry.icursor(tk.END)
@@ -1155,7 +1159,7 @@ class FilmTrackerApp:
         self.fstop_var.set("")
         self.frame_var.set("")
         self.date_var.set("")
-        self.notes_var.set("")
+        self._set_notes_text("")
         self.status_var.set(self.preferences["default_shot_status"])
         self.shot_tree.selection_remove(self.shot_tree.selection())
 

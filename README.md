@@ -22,6 +22,7 @@ This repository now includes a Tkinter desktop app for tracking film shots per r
 	- Frame number (optional)
 	- Shot date (optional, `YYYY-MM-DD`)
 	- Notes (optional)
+	- Multiline notes editor in shot details panel
 	- Status (`shot`, `developed`, `scanned`, `edited`, `printed`)
 - Status filter (`all` plus each status value)
 - Bulk status update actions (`Mark Selected`, `Mark Visible`)
