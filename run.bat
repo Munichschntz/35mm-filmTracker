@@ -23,6 +23,12 @@ if not exist "requirements.txt" (
     exit /b 1
 )
 
+if not exist "film_tracker.py" (
+    echo [ERROR] film_tracker.py not found in project root.
+    pause
+    exit /b 1
+)
+
 echo [INFO] Installing/updating dependencies in .venv ...
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 if errorlevel 1 (
@@ -31,4 +37,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location '%~dp0'; . .\.venv\Scripts\Activate.ps1"
+echo [INFO] Starting film_tracker.py in activated .venv ...
+powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location '%~dp0'; . .\.venv\Scripts\Activate.ps1; python .\film_tracker.py"

@@ -77,10 +77,11 @@ Run `run.bat` from File Explorer or Command Prompt to:
 1. Create `.venv` automatically if it does not exist.
 2. Install/update dependencies from `requirements.txt` into `.venv`.
 3. Open PowerShell in the project folder with `.venv` activated.
-4. Keep PowerShell open so you can run commands, for example:
+4. Start `film_tracker.py` automatically.
+5. Keep PowerShell open after the app exits.
 
 ```powershell
-python film_tracker.py
+run.bat
 ```
 
 This ensures packages are installed into `.venv` (not system Python).
