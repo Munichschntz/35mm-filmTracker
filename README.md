@@ -74,15 +74,16 @@ Dependencies: `tkcalendar` (UI date picker). `tkinter` and `sqlite3` are from th
 
 Run `run.bat` from File Explorer or Command Prompt to:
 
-1. Open PowerShell in the project folder.
-2. Activate `.venv`.
-3. Keep PowerShell open so you can run commands, for example:
+1. Create `.venv` automatically if it does not exist.
+2. Install/update dependencies from `requirements.txt` into `.venv`.
+3. Open PowerShell in the project folder with `.venv` activated.
+4. Keep PowerShell open so you can run commands, for example:
 
 ```powershell
 python film_tracker.py
 ```
 
-If `.venv` does not exist, the launcher shows setup commands and exits.
+This ensures packages are installed into `.venv` (not system Python).
 
 ### Data Model
 
