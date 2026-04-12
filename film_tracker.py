@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
@@ -169,6 +170,8 @@ class FilmTrackerApp:
         self.root.geometry("1180x680")
         self.root.minsize(1020, 600)
 
+        self._configure_styles()
+
         self.db = FilmDatabase("data/film_tracker.db")
         self.preferences = dict(self.DEFAULT_PREFERENCES)
         self._load_preferences()
@@ -214,6 +217,16 @@ class FilmTrackerApp:
 
         menubar.add_cascade(label="App", menu=app_menu)
         self.root.config(menu=menubar)
+
+    def _configure_styles(self) -> None:
+        style = ttk.Style(self.root)
+        base_font = tkfont.nametofont("TkDefaultFont")
+        input_font = base_font.copy()
+        input_font.configure(size=base_font.cget("size") + 1)
+        self.input_font = input_font
+
+        style.configure("Large.TEntry", font=self.input_font, padding=(6, 6))
+        style.configure("Large.TCombobox", font=self.input_font, padding=(6, 6))
 
     def _load_preferences(self) -> None:
         stored = self.db.get_preferences()
@@ -288,20 +301,22 @@ class FilmTrackerApp:
         self.collection_hint_var = tk.StringVar(value="Select or add a roll collection to begin.")
         self.collection_meta_var = tk.StringVar(value="")
         ttk.Label(top_bar, textvariable=self.collection_hint_var).grid(row=0, column=0, sticky="w")
-        ttk.Label(top_bar, textvariable=self.collection_meta_var, foreground="#4F4F4F").grid(row=1, column=0, sticky="w", pady=(2, 0))
-
-        ttk.Label(top_bar, text="Status Filter:").grid(row=0, column=1, rowspan=2, sticky="e", padx=(8, 4))
+        filter_row = ttk.Frame(top_bar)
+        filter_row.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(filter_row, text="Status Filter:").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self.status_filter_combo = ttk.Combobox(
-            top_bar,
+            filter_row,
             textvariable=self.active_status_filter,
             values=("all", *self.STATUS_VALUES),
             state="readonly",
-            width=12,
+            width=14,
+            style="Large.TCombobox",
         )
-        self.status_filter_combo.grid(row=0, column=2, rowspan=2, sticky="e")
+        self.status_filter_combo.grid(row=0, column=1, sticky="w")
         if self.active_status_filter.get() not in ("all", *self.STATUS_VALUES):
             self.active_status_filter.set("all")
         self.status_filter_combo.bind("<<ComboboxSelected>>", self._on_status_filter_changed)
+        ttk.Label(top_bar, textvariable=self.collection_meta_var, foreground="#4F4F4F").grid(row=2, column=0, sticky="w", pady=(6, 0))
 
         self.shot_tree = ttk.Treeview(
             panel,
@@ -366,20 +381,22 @@ class FilmTrackerApp:
         form.columnconfigure(3, weight=0)
         form.columnconfigure(4, weight=2)
         form.columnconfigure(5, weight=0)
+        form.columnconfigure(6, weight=2)
+        form.columnconfigure(7, weight=1)
 
         ttk.Label(form, text="Shutter Speed *").grid(row=0, column=0, sticky="w")
         self.shutter_var = tk.StringVar()
-        self.shutter_entry = ttk.Entry(form, textvariable=self.shutter_var)
+        self.shutter_entry = ttk.Entry(form, textvariable=self.shutter_var, style="Large.TEntry")
         self.shutter_entry.grid(row=1, column=0, sticky="ew", padx=(0, 8))
 
         ttk.Label(form, text="F-Stop *").grid(row=0, column=1, sticky="w")
         self.fstop_var = tk.StringVar()
-        self.fstop_entry = ttk.Entry(form, textvariable=self.fstop_var)
+        self.fstop_entry = ttk.Entry(form, textvariable=self.fstop_var, style="Large.TEntry")
         self.fstop_entry.grid(row=1, column=1, sticky="ew", padx=(0, 8))
 
         ttk.Label(form, text="Frame #").grid(row=0, column=2, sticky="w")
         self.frame_var = tk.StringVar()
-        self.frame_entry = ttk.Entry(form, textvariable=self.frame_var)
+        self.frame_entry = ttk.Entry(form, textvariable=self.frame_var, style="Large.TEntry")
         self.frame_entry.grid(row=1, column=2, sticky="ew", padx=(0, 8))
 
         ttk.Label(form, text="Shot Date").grid(row=0, column=3, sticky="w")
@@ -389,15 +406,16 @@ class FilmTrackerApp:
             textvariable=self.date_var,
             date_pattern="yyyy-mm-dd",
             width=12,
+            font=self.input_font,
         )
         self.date_entry.grid(row=1, column=3, sticky="ew", padx=(0, 8))
 
-        ttk.Label(form, text="Notes").grid(row=0, column=4, sticky="w")
+        ttk.Label(form, text="Notes").grid(row=0, column=4, columnspan=4, sticky="w")
         self.notes_var = tk.StringVar()
-        self.notes_entry = ttk.Entry(form, textvariable=self.notes_var)
-        self.notes_entry.grid(row=1, column=4, sticky="ew", padx=(0, 8))
+        self.notes_entry = ttk.Entry(form, textvariable=self.notes_var, style="Large.TEntry")
+        self.notes_entry.grid(row=1, column=4, columnspan=4, sticky="ew")
 
-        ttk.Label(form, text="Status").grid(row=0, column=5, sticky="w")
+        ttk.Label(form, text="Status").grid(row=2, column=0, sticky="w", pady=(10, 0))
         self.status_var = tk.StringVar(value="shot")
         self.status_combo = ttk.Combobox(
             form,
@@ -405,12 +423,13 @@ class FilmTrackerApp:
             values=self.STATUS_VALUES,
             state="readonly",
             width=12,
+            style="Large.TCombobox",
         )
-        self.status_combo.grid(row=1, column=5, sticky="ew", padx=(0, 8))
+        self.status_combo.grid(row=3, column=0, sticky="ew", padx=(0, 8))
         self.status_combo.current(0)
 
         buttons = ttk.Frame(form)
-        buttons.grid(row=2, column=0, columnspan=6, sticky="e", pady=(10, 0))
+        buttons.grid(row=3, column=1, columnspan=7, sticky="e", pady=(10, 0))
         buttons.columnconfigure(0, weight=1)
         buttons.columnconfigure(1, weight=1)
         buttons.columnconfigure(2, weight=1)
