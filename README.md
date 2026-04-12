@@ -14,6 +14,7 @@ This repository now includes a Tkinter desktop app for tracking film shots per r
 	- Lens (optional)
 	- Lab (optional)
 	- Push/pull notes (optional)
+- Structured metadata dialog for add/edit collection metadata
 - Shot entries inside each collection
 - Shot fields:
 	- Shutter speed
@@ -25,6 +26,7 @@ This repository now includes a Tkinter desktop app for tracking film shots per r
 - Status filter (`all` plus each status value)
 - Bulk status update actions (`Mark Selected`, `Mark Visible`)
 - Quick entry support with `Save + Next` and keyboard shortcut `Ctrl+Enter`
+- Preferences window (`App` -> `Preferences`) with tabbed settings for defaults, quick entry, metadata display, and workflow tips
 - SQLite persistence at `data/film_tracker.db`
 - Delete protection prompts for collections and shots
 - Automatic schema migration support (uses SQLite `PRAGMA user_version`)
@@ -68,7 +70,7 @@ Frame numbers are unique within the same collection when provided.
 ### Usage
 
 1. Add a collection from the left panel.
-2. (Optional) click `Edit Meta` to update roll metadata.
+2. (Optional) click `Edit Meta` to update roll metadata in a structured form dialog.
 3. Select a collection.
 4. Enter shot details in the form on the right.
 5. Click `Save Shot` to add a new shot.
@@ -76,6 +78,7 @@ Frame numbers are unique within the same collection when provided.
 7. Use the status filter and bulk status controls above the shot form as needed.
 8. Select an existing shot to edit, then click `Save Shot`.
 9. Use `Delete Shot` or `Delete` (collection) to remove data.
+10. Open `App` -> `Preferences` to customize default status/filter and quick-entry behavior.
 
 ### Manual Smoke Test Checklist
 

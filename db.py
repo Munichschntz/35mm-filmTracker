@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 
 class FilmDatabase:
-    LATEST_SCHEMA_VERSION = 3
+    LATEST_SCHEMA_VERSION = 4
 
     def __init__(self, db_path: str = "data/film_tracker.db") -> None:
         self.db_path = Path(db_path)
@@ -34,6 +34,11 @@ class FilmDatabase:
             if current_version < 3:
                 self._migrate_to_v3(conn)
                 self._set_schema_version(conn, 3)
+                current_version = 3
+
+            if current_version < 4:
+                self._migrate_to_v4(conn)
+                self._set_schema_version(conn, 4)
 
     @staticmethod
     def _create_base_schema(conn: sqlite3.Connection) -> None:
@@ -99,6 +104,17 @@ class FilmDatabase:
             conn.execute("ALTER TABLE collections ADD COLUMN lab TEXT")
         if not self._column_exists(conn, "collections", "push_pull"):
             conn.execute("ALTER TABLE collections ADD COLUMN push_pull TEXT")
+
+    @staticmethod
+    def _migrate_to_v4(conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS preferences (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
 
     # Collection operations
     def list_collections(self) -> list[sqlite3.Row]:
@@ -330,6 +346,31 @@ class FilmDatabase:
             )
             row = cursor.fetchone()
             return int(row["count"]) if row else 0
+
+    # Preferences
+    def get_preferences(self) -> dict[str, str]:
+        with self._connect() as conn:
+            cursor = conn.execute("SELECT key, value FROM preferences")
+            return {str(row["key"]): str(row["value"]) for row in cursor.fetchall()}
+
+    def get_preference(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        with self._connect() as conn:
+            cursor = conn.execute("SELECT value FROM preferences WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            if row is None:
+                return default
+            return str(row["value"])
+
+    def set_preference(self, key: str, value: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO preferences (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (key, value),
+            )
 
     @staticmethod
     def normalize_optional_text(value: Optional[str]) -> Optional[str]:
