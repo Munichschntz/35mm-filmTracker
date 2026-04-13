@@ -39,7 +39,7 @@ It helps you track exposure details while shooting, then follow each frame throu
 - SQLite persistence at `data/film_tracker.db`
 - Delete protection prompts for collections and shots
 - Dialog windows open centered over the main app window for consistent UX
-- Automatic schema migration support (uses SQLite `PRAGMA user_version`)
+- Automatic schema initialization for the current app schema (tracked with SQLite `PRAGMA user_version`)
 
 ### Run
 
@@ -101,6 +101,7 @@ This ensures packages are installed into `.venv` (not system Python).
 	- `lens` (optional)
 	- `lab` (optional)
 	- `push_pull` (optional)
+	- `capacity` (optional)
 	- `created_at`
 - `shots`
 	- `id` (PK)

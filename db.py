@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 
 class FilmDatabase:
-    LATEST_SCHEMA_VERSION = 6
+    LATEST_SCHEMA_VERSION = 1
 
     def __init__(self, db_path: str = "data/film_tracker.db") -> None:
         self.db_path = Path(db_path)
@@ -19,44 +19,24 @@ class FilmDatabase:
 
     def _initialize(self) -> None:
         with self._connect() as conn:
-            self._create_base_schema(conn)
-
-            current_version = self._get_schema_version(conn)
-            if current_version < 1:
-                self._set_schema_version(conn, 1)
-                current_version = 1
-
-            if current_version < 2:
-                self._migrate_to_v2(conn)
-                self._set_schema_version(conn, 2)
-                current_version = 2
-
-            if current_version < 3:
-                self._migrate_to_v3(conn)
-                self._set_schema_version(conn, 3)
-                current_version = 3
-
-            if current_version < 4:
-                self._migrate_to_v4(conn)
-                self._set_schema_version(conn, 4)
-                current_version = 4
-
-            if current_version < 5:
-                self._migrate_to_v5(conn)
-                self._set_schema_version(conn, 5)
-                current_version = 5
-
-            if current_version < 6:
-                self._migrate_to_v6(conn)
-                self._set_schema_version(conn, 6)
+            self._create_schema(conn)
+            if self._get_schema_version(conn) != self.LATEST_SCHEMA_VERSION:
+                self._set_schema_version(conn, self.LATEST_SCHEMA_VERSION)
 
     @staticmethod
-    def _create_base_schema(conn: sqlite3.Connection) -> None:
+    def _create_schema(conn: sqlite3.Connection) -> None:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS collections (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL CHECK (trim(name) <> ''),
+                film_stock TEXT,
+                iso INTEGER,
+                camera TEXT,
+                lens TEXT,
+                lab TEXT,
+                push_pull TEXT,
+                capacity INTEGER,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -68,9 +48,15 @@ class FilmDatabase:
                 frame_number INTEGER,
                 shot_date TEXT,
                 notes TEXT,
+                status TEXT NOT NULL DEFAULT 'shot',
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
                 CHECK (frame_number IS NULL OR frame_number > 0)
+            );
+
+            CREATE TABLE IF NOT EXISTS preferences (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_shots_collection_id
@@ -82,52 +68,6 @@ class FilmDatabase:
             """
         )
 
-    @staticmethod
-    def _get_schema_version(conn: sqlite3.Connection) -> int:
-        cursor = conn.execute("PRAGMA user_version")
-        row = cursor.fetchone()
-        return int(row[0]) if row else 0
-
-    @staticmethod
-    def _set_schema_version(conn: sqlite3.Connection, version: int) -> None:
-        conn.execute(f"PRAGMA user_version = {version}")
-
-    @staticmethod
-    def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
-        cursor = conn.execute(f"PRAGMA table_info({table})")
-        return any(row["name"] == column for row in cursor.fetchall())
-
-    def _migrate_to_v2(self, conn: sqlite3.Connection) -> None:
-        if not self._column_exists(conn, "shots", "status"):
-            conn.execute("ALTER TABLE shots ADD COLUMN status TEXT NOT NULL DEFAULT 'shot'")
-
-    def _migrate_to_v3(self, conn: sqlite3.Connection) -> None:
-        if not self._column_exists(conn, "collections", "film_stock"):
-            conn.execute("ALTER TABLE collections ADD COLUMN film_stock TEXT")
-        if not self._column_exists(conn, "collections", "iso"):
-            conn.execute("ALTER TABLE collections ADD COLUMN iso INTEGER")
-        if not self._column_exists(conn, "collections", "camera"):
-            conn.execute("ALTER TABLE collections ADD COLUMN camera TEXT")
-        if not self._column_exists(conn, "collections", "lens"):
-            conn.execute("ALTER TABLE collections ADD COLUMN lens TEXT")
-        if not self._column_exists(conn, "collections", "lab"):
-            conn.execute("ALTER TABLE collections ADD COLUMN lab TEXT")
-        if not self._column_exists(conn, "collections", "push_pull"):
-            conn.execute("ALTER TABLE collections ADD COLUMN push_pull TEXT")
-
-    @staticmethod
-    def _migrate_to_v4(conn: sqlite3.Connection) -> None:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS preferences (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-            """
-        )
-
-    @staticmethod
-    def _migrate_to_v5(conn: sqlite3.Connection) -> None:
         default_preferences = {
             "camera_presets": "",
             "lens_presets": "",
@@ -143,10 +83,14 @@ class FilmDatabase:
             )
 
     @staticmethod
-    def _migrate_to_v6(conn: sqlite3.Connection) -> None:
-        cursor = conn.execute("PRAGMA table_info(collections)")
-        if not any(row["name"] == "capacity" for row in cursor.fetchall()):
-            conn.execute("ALTER TABLE collections ADD COLUMN capacity INTEGER")
+    def _get_schema_version(conn: sqlite3.Connection) -> int:
+        cursor = conn.execute("PRAGMA user_version")
+        row = cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    @staticmethod
+    def _set_schema_version(conn: sqlite3.Connection, version: int) -> None:
+        conn.execute(f"PRAGMA user_version = {version}")
 
     # Collection operations
     def list_collections(self) -> list[sqlite3.Row]:
