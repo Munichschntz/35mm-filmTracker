@@ -650,7 +650,38 @@ class FilmTrackerApp:
             "Bulk Update: select multiple shots in the list, choose a status, "
             "and click Mark Selected — or use Mark Visible to update all shown rows at once."
         )
-        messagebox.showinfo("Quick Tips", tips, parent=self.root)
+        window = tb.Toplevel(self.root)
+        window.title("Quick Tips")
+        window.transient(self.root)
+        window.grab_set()
+        window.resizable(True, True)
+        center_dialog_over_parent(window, self.root, 620, 320)
+
+        content = ttk.Frame(window, padding=12)
+        content.grid(row=0, column=0, sticky="nsew")
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(0, weight=1)
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(1, weight=1)
+
+        ttk.Label(content, text="Quick Tips").grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ttk.Label(content, text=tips.split("\n\n", 1)[1], justify="left", wraplength=580).grid(row=1, column=0, sticky="nsew")
+
+        button_row = ttk.Frame(content)
+        button_row.grid(row=2, column=0, sticky="e", pady=(12, 0))
+
+        def _close_dialog() -> None:
+            window.destroy()
+
+        close_button = ttk.Button(button_row, text="Close", command=_close_dialog)
+        close_button.grid(row=0, column=0)
+        close_button.focus_set()
+
+        window.bind("<Escape>", lambda _event: _close_dialog())
+        window.bind("<Return>", lambda _event: _close_dialog())
+        window.protocol("WM_DELETE_WINDOW", _close_dialog)
+
+        self.root.wait_window(window)
 
     def _set_date_today(self) -> None:
         self.date_var.set(date.today().isoformat())
