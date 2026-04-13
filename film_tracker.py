@@ -744,17 +744,28 @@ class FilmTrackerApp:
         result["iso"] = "" if iso_value is None else str(iso_value)
         return result
 
-    def _format_collection_hint(self, collection_name: str, shots_count: int) -> tuple[str, str]:
+    def _format_collection_hint(
+        self,
+        collection_name: str,
+        visible_shots_count: int,
+        total_shots_count: int,
+        active_filter: str,
+    ) -> tuple[str, str]:
         if self.selected_collection_id is None:
             return "Select or add a roll collection to begin.", ""
 
+        if active_filter == "all":
+            count_text = f"{total_shots_count} shot(s)"
+        else:
+            count_text = f"{visible_shots_count} shown / {total_shots_count} total"
+
         collection = self.db.get_collection(self.selected_collection_id)
         if collection is None:
-            return f"Collection: {collection_name} ({shots_count} shot(s))", ""
+            return f"Collection: {collection_name} ({count_text})", ""
 
         details: list[str] = []
         if not self._preference_bool("show_collection_metadata_header"):
-            return f"Collection: {collection_name} ({shots_count} shot(s))", ""
+            return f"Collection: {collection_name} ({count_text})", ""
 
         stock = (collection["film_stock"] or "").strip()
         if stock:
@@ -769,7 +780,7 @@ class FilmTrackerApp:
             details.append(lens)
 
         detail_text = " | ".join(details)
-        return f"Collection: {collection_name} ({shots_count} shot(s))", detail_text
+        return f"Collection: {collection_name} ({count_text})", detail_text
 
     # Collections
     def _load_collections(self) -> None:
@@ -1074,7 +1085,13 @@ class FilmTrackerApp:
         active_filter = self.active_status_filter.get()
         selected_status = None if active_filter == "all" else active_filter
         shots = self.db.list_shots_for_collection(self.selected_collection_id, selected_status)
-        headline, metadata = self._format_collection_hint(selected_label, len(shots))
+        total_shots = self.db.shot_count_for_collection(self.selected_collection_id)
+        headline, metadata = self._format_collection_hint(
+            selected_label,
+            len(shots),
+            total_shots,
+            active_filter,
+        )
         self.collection_hint_var.set(headline)
         self.collection_meta_var.set(metadata)
 
@@ -1101,14 +1118,13 @@ class FilmTrackerApp:
     def _on_shot_selected(self, _event: object) -> None:
         selection = self.shot_tree.selection()
         if len(selection) != 1:
-            self.selected_shot_id = None
-            self._clear_shot_form()
+            self._clear_shot_form_fields_only()
             return
 
         shot_id = int(selection[0])
         row = self.db.get_shot(shot_id)
         if row is None:
-            self.selected_shot_id = None
+            self._clear_shot_form_fields_only()
             return
 
         self.selected_shot_id = shot_id
@@ -1308,13 +1324,17 @@ class FilmTrackerApp:
         self._load_shots_for_selected_collection()
 
     def _clear_shot_form(self) -> None:
+        self._clear_shot_form_fields_only()
+        self.shot_tree.selection_remove(self.shot_tree.selection())
+
+    def _clear_shot_form_fields_only(self) -> None:
+        self.selected_shot_id = None
         self.shutter_var.set("")
         self.fstop_var.set("")
         self.frame_var.set("")
         self.date_var.set("")
         self._set_notes_text("")
         self.status_var.set(self.preferences["default_shot_status"])
-        self.shot_tree.selection_remove(self.shot_tree.selection())
 
 
 def main() -> None:
