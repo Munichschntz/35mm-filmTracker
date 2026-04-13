@@ -3,11 +3,14 @@ from __future__ import annotations
 import csv
 import tkinter as tk
 import tkinter.font as tkfont
+import tkinter.simpledialog as simpledialog
 from datetime import date, datetime
 from tkinter import filedialog, messagebox, ttk
 import ttkbootstrap as tb
 
 from db import FilmDatabase
+from film_catalog import FilmCatalog, FilmStock
+from roll_log import Roll, RollLog
 
 
 def center_dialog_over_parent(window: tk.Toplevel, parent: tk.Tk, min_width: int, min_height: int) -> None:
@@ -325,6 +328,9 @@ class FilmTrackerApp:
         self._configure_styles()
 
         self.db = FilmDatabase("data/film_tracker.db")
+        self.catalog = FilmCatalog()
+        self.catalog.load()
+        self.roll_log = RollLog(self.catalog)
         self.preferences = dict(self.DEFAULT_PREFERENCES)
         self._load_preferences()
 
@@ -381,11 +387,22 @@ class FilmTrackerApp:
 
         menubar.add_cascade(label="App", menu=app_menu)
 
+        tools_menu = tk.Menu(menubar, tearoff=False)
+        tools_menu.add_command(label="Film Catalog...", command=self._open_film_catalog)
+        tools_menu.add_command(label="Roll Tracker...", command=self._open_roll_tracker)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+
         help_menu = tk.Menu(menubar, tearoff=False)
         help_menu.add_command(label="Quick Tips", command=self._show_help_tips)
         menubar.add_cascade(label="Help", menu=help_menu)
 
         self.root.config(menu=menubar)
+
+    def _open_film_catalog(self) -> None:
+        FilmCatalogWindow(self.root, self.catalog)
+
+    def _open_roll_tracker(self) -> None:
+        RollTrackerWindow(self.root, self.catalog, self.roll_log)
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
@@ -1626,6 +1643,583 @@ class FilmTrackerApp:
         self._form_dirty = False
         self.save_shot_btn.configure(text="Save Shot")
         self.save_next_btn.configure(state="normal")
+
+
+# ---------------------------------------------------------------------------
+# Film Catalog Window
+# ---------------------------------------------------------------------------
+
+_TYPE_LABELS: dict[str, str] = {
+    "color_negative": "Color Negative",
+    "black_and_white": "Black & White",
+    "slide": "Slide",
+    "cinema": "Cinema",
+    "": "Any",
+}
+
+_PROCESS_LABELS: dict[str, str] = {
+    "C-41": "C-41",
+    "BW": "BW",
+    "E-6": "E-6",
+    "ECN-2": "ECN-2",
+    "": "Any",
+}
+
+
+class FilmCatalogWindow:
+    def __init__(self, parent: tk.Tk, catalog: FilmCatalog) -> None:
+        self._catalog = catalog
+        self._win = tb.Toplevel(parent)
+        self._win.title("Film Catalog")
+        self._win.transient(parent)
+        self._win.geometry("860x580")
+        self._win.minsize(720, 480)
+
+        self._var_iso_min = tk.StringVar()
+        self._var_iso_max = tk.StringVar()
+        self._var_type = tk.StringVar(value="")
+        self._var_process = tk.StringVar(value="")
+        self._var_search = tk.StringVar()
+
+        self._build()
+        self._refresh()
+        self._win.grab_set()
+
+    def _build(self) -> None:
+        outer = ttk.Frame(self._win, padding=10)
+        outer.pack(fill="both", expand=True)
+
+        # ── filter bar ───────────────────────────────────────────────────
+        fbar = ttk.LabelFrame(outer, text="Filter", padding=(8, 4))
+        fbar.pack(fill="x", pady=(0, 6))
+
+        ttk.Label(fbar, text="ISO min:").grid(row=0, column=0, sticky="w", padx=(0, 2))
+        ttk.Entry(fbar, textvariable=self._var_iso_min, width=6).grid(row=0, column=1, padx=(0, 10))
+
+        ttk.Label(fbar, text="ISO max:").grid(row=0, column=2, sticky="w", padx=(0, 2))
+        ttk.Entry(fbar, textvariable=self._var_iso_max, width=6).grid(row=0, column=3, padx=(0, 10))
+
+        ttk.Label(fbar, text="Type:").grid(row=0, column=4, sticky="w", padx=(0, 2))
+        type_opts = ["", "color_negative", "black_and_white", "slide", "cinema"]
+        type_menu = ttk.Combobox(
+            fbar, textvariable=self._var_type,
+            values=type_opts, state="readonly", width=16,
+        )
+        type_menu["values"] = type_opts
+        type_menu.grid(row=0, column=5, padx=(0, 10))
+        # show friendly labels in dropdown by overriding the displayed value
+        type_menu.configure(postcommand=lambda: None)
+
+        ttk.Label(fbar, text="Process:").grid(row=0, column=6, sticky="w", padx=(0, 2))
+        proc_opts = ["", "C-41", "BW", "E-6", "ECN-2"]
+        ttk.Combobox(
+            fbar, textvariable=self._var_process,
+            values=proc_opts, state="readonly", width=8,
+        ).grid(row=0, column=7, padx=(0, 10))
+
+        ttk.Label(fbar, text="Search:").grid(row=0, column=8, sticky="w", padx=(0, 2))
+        ttk.Entry(fbar, textvariable=self._var_search, width=18).grid(row=0, column=9, padx=(0, 8))
+
+        ttk.Button(fbar, text="Apply", command=self._refresh).grid(row=0, column=10, padx=(0, 4))
+        ttk.Button(fbar, text="Clear", command=self._clear_filters).grid(row=0, column=11)
+
+        # ── treeview ──────────────────────────────────────────────────────
+        cols = ("name", "manufacturer", "type", "iso", "process", "push_pull")
+        tree_frame = ttk.Frame(outer)
+        tree_frame.pack(fill="both", expand=True)
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+        self._tree = ttk.Treeview(
+            tree_frame, columns=cols, show="headings", selectmode="browse",
+        )
+        for col, heading, width in [
+            ("name", "Film", 220),
+            ("manufacturer", "Maker", 100),
+            ("type", "Type", 130),
+            ("iso", "ISO", 60),
+            ("process", "Process", 70),
+            ("push_pull", "Push/Pull", 80),
+        ]:
+            self._tree.heading(col, text=heading)
+            self._tree.column(col, width=width, minwidth=50, anchor="w")
+        self._tree.column("iso", anchor="e")
+        self._tree.column("push_pull", anchor="center")
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self._tree.yview)
+        self._tree.configure(yscrollcommand=vsb.set)
+        self._tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        self._tree.bind("<<TreeviewSelect>>", self._on_select)
+
+        # ── detail pane ───────────────────────────────────────────────────
+        detail = ttk.LabelFrame(outer, text="Details", padding=(8, 4))
+        detail.pack(fill="x", pady=(6, 0))
+
+        self._lbl_notes = ttk.Label(detail, text="", wraplength=760, justify="left")
+        self._lbl_notes.pack(anchor="w")
+
+        self._lbl_warning = ttk.Label(
+            detail, text="", foreground="#b45309", wraplength=760, justify="left",
+        )
+        self._lbl_warning.pack(anchor="w")
+
+        btn_row = ttk.Frame(detail)
+        btn_row.pack(anchor="e", pady=(4, 0))
+        ttk.Button(btn_row, text="Recommend...", command=self._open_recommend).pack()
+
+    # ------------------------------------------------------------------
+
+    def _clear_filters(self) -> None:
+        self._var_iso_min.set("")
+        self._var_iso_max.set("")
+        self._var_type.set("")
+        self._var_process.set("")
+        self._var_search.set("")
+        self._refresh()
+
+    def _refresh(self) -> None:
+        query = self._var_search.get().strip()
+        iso_min: int | None = None
+        iso_max: int | None = None
+        try:
+            if self._var_iso_min.get().strip():
+                iso_min = int(self._var_iso_min.get().strip())
+            if self._var_iso_max.get().strip():
+                iso_max = int(self._var_iso_max.get().strip())
+        except ValueError:
+            messagebox.showerror("Invalid ISO", "ISO min/max must be integers.", parent=self._win)
+            return
+
+        film_type = self._var_type.get()
+        process = self._var_process.get()
+
+        if query:
+            films = self._catalog.search(query)
+            # apply remaining filters on top of search
+            if iso_min is not None:
+                films = [f for f in films if f.iso >= iso_min]
+            if iso_max is not None:
+                films = [f for f in films if f.iso <= iso_max]
+            if film_type:
+                films = [f for f in films if f.type == film_type]
+            if process:
+                films = [f for f in films if f.process == process]
+        else:
+            films = self._catalog.filter(
+                iso_min=iso_min,
+                iso_max=iso_max,
+                film_type=film_type or None,
+                process=process or None,
+            )
+
+        self._tree.delete(*self._tree.get_children())
+        for film in films:
+            self._tree.insert(
+                "", "end",
+                iid=film.id,
+                values=(
+                    film.name,
+                    film.manufacturer,
+                    _TYPE_LABELS.get(film.type, film.type),
+                    film.iso,
+                    film.process,
+                    "Yes" if film.is_push_pull_sensitive else "",
+                ),
+            )
+
+        self._lbl_notes.config(text="")
+        self._lbl_warning.config(text="")
+
+    def _on_select(self, _event: tk.Event) -> None:  # type: ignore[type-arg]
+        sel = self._tree.selection()
+        if not sel:
+            return
+        film = self._catalog.get_by_id(sel[0])
+        if film is None:
+            return
+        self._lbl_notes.config(text=film.notes or "")
+        warning = film.exposure_warning
+        self._lbl_warning.config(text=(f"\u26a0\ufe0f  {warning}") if warning else "")
+
+    def _open_recommend(self) -> None:
+        RecommendDialog(self._win, self._catalog)
+
+
+# ---------------------------------------------------------------------------
+# Recommendation Dialog
+# ---------------------------------------------------------------------------
+
+class RecommendDialog:
+    _SCENARIO_LABELS = [
+        ("portrait", "Portrait"),
+        ("low_light", "Low Light"),
+        ("landscape", "Landscape"),
+        ("budget", "Budget"),
+        ("night", "Night"),
+    ]
+
+    def __init__(self, parent: tk.Toplevel, catalog: FilmCatalog) -> None:
+        self._catalog = catalog
+        self._win = tb.Toplevel(parent)
+        self._win.title("Film Recommendations")
+        self._win.transient(parent)
+        self._win.geometry("540x440")
+        self._win.resizable(True, True)
+        self._var_scenario = tk.StringVar(value="portrait")
+        self._build()
+        self._run()
+        self._win.grab_set()
+
+    def _build(self) -> None:
+        outer = ttk.Frame(self._win, padding=12)
+        outer.pack(fill="both", expand=True)
+
+        ttk.Label(outer, text="Select shooting scenario:", font=("TkDefaultFont", 10, "bold")).pack(anchor="w")
+
+        radio_frame = ttk.Frame(outer)
+        radio_frame.pack(anchor="w", pady=(4, 8))
+        for value, label in self._SCENARIO_LABELS:
+            ttk.Radiobutton(
+                radio_frame, text=label,
+                variable=self._var_scenario, value=value,
+                command=self._run,
+            ).pack(side="left", padx=6)
+
+        ttk.Separator(outer).pack(fill="x", pady=(0, 8))
+
+        self._text = tk.Text(
+            outer, wrap="word", height=18, relief="flat",
+            font=("TkDefaultFont", 9),
+        )
+        self._text.pack(fill="both", expand=True)
+        self._text.tag_configure("film", font=("TkDefaultFont", 9, "bold"))
+        self._text.tag_configure("warn", foreground="#b45309")
+        self._text.configure(state="disabled")
+
+        ttk.Button(outer, text="Close", command=self._win.destroy).pack(pady=(8, 0), anchor="e")
+
+    def _run(self) -> None:
+        scenario = self._var_scenario.get()
+        results = self._catalog.recommend(scenario)
+        self._text.configure(state="normal")
+        self._text.delete("1.0", "end")
+        for i, (film, explanation) in enumerate(results, 1):
+            self._text.insert("end", f"{i}. {film.name}", "film")
+            lines = explanation.split("\n")
+            first_line = lines[0]
+            self._text.insert("end", f"\n   {first_line}\n")
+            for extra in lines[1:]:
+                self._text.insert("end", f"   {extra}\n", "warn")
+            self._text.insert("end", "\n")
+        self._text.configure(state="disabled")
+
+
+# ---------------------------------------------------------------------------
+# Roll Tracker Window
+# ---------------------------------------------------------------------------
+
+_STATUS_COLORS: dict[str, str] = {
+    "loaded": "#2563eb",      # blue
+    "in_progress": "#d97706", # amber
+    "finished": "#16a34a",    # green
+    "developed": "#7c3aed",   # purple
+}
+
+
+class RollTrackerWindow:
+    def __init__(self, parent: tk.Tk, catalog: FilmCatalog, roll_log: RollLog) -> None:
+        self._catalog = catalog
+        self._roll_log = roll_log
+        self._win = tb.Toplevel(parent)
+        self._win.title("Roll Tracker")
+        self._win.transient(parent)
+        self._win.geometry("820x520")
+        self._win.minsize(700, 420)
+        self._selected_roll_id: str | None = None
+        self._build()
+        self._refresh()
+        self._win.grab_set()
+
+    def _build(self) -> None:
+        outer = ttk.Frame(self._win, padding=10)
+        outer.pack(fill="both", expand=True)
+
+        # ── treeview ──────────────────────────────────────────────────────
+        cols = ("film", "camera", "frames", "status", "date_loaded")
+        tree_frame = ttk.Frame(outer)
+        tree_frame.pack(fill="both", expand=True)
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+        self._tree = ttk.Treeview(
+            tree_frame, columns=cols, show="headings", selectmode="browse",
+        )
+        for col, heading, width in [
+            ("film", "Film", 200),
+            ("camera", "Camera", 160),
+            ("frames", "Frames", 60),
+            ("status", "Status", 100),
+            ("date_loaded", "Loaded", 100),
+        ]:
+            self._tree.heading(col, text=heading)
+            self._tree.column(col, width=width, minwidth=40, anchor="w")
+        self._tree.column("frames", anchor="e")
+
+        for status, color in _STATUS_COLORS.items():
+            self._tree.tag_configure(status, foreground=color)
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self._tree.yview)
+        self._tree.configure(yscrollcommand=vsb.set)
+        self._tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        self._tree.bind("<<TreeviewSelect>>", self._on_select)
+
+        # ── detail / notes ────────────────────────────────────────────────
+        detail = ttk.LabelFrame(outer, text="Notes / Details", padding=(8, 4))
+        detail.pack(fill="x", pady=(6, 4))
+        self._lbl_detail = ttk.Label(detail, text="", wraplength=780, justify="left")
+        self._lbl_detail.pack(anchor="w")
+
+        # ── action bar ────────────────────────────────────────────────────
+        bar = ttk.Frame(outer)
+        bar.pack(fill="x")
+        self._btn_frame   = ttk.Button(bar, text="+ Frame",       command=self._cmd_frame)
+        self._btn_finish  = ttk.Button(bar, text="Mark Finished", command=self._cmd_finish)
+        self._btn_develop = ttk.Button(bar, text="Set Developed", command=self._cmd_develop)
+        self._btn_note    = ttk.Button(bar, text="Add Note",      command=self._cmd_note)
+
+        ttk.Button(bar, text="New Roll", command=self._cmd_new_roll).pack(side="left", padx=(0, 4))
+        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=6)
+        self._btn_frame.pack(side="left", padx=2)
+        self._btn_finish.pack(side="left", padx=2)
+        self._btn_develop.pack(side="left", padx=2)
+        self._btn_note.pack(side="left", padx=2)
+        self._set_action_buttons_state("disabled")
+
+    # ------------------------------------------------------------------
+
+    def _refresh(self) -> None:
+        self._tree.delete(*self._tree.get_children())
+        for roll in self._roll_log.list_rolls():
+            film = self._catalog.get_by_id(roll.film_id)
+            film_name = film.name if film else roll.film_id
+            self._tree.insert(
+                "", "end",
+                iid=roll.roll_id,
+                tags=(roll.status,),
+                values=(film_name, roll.camera, roll.frames_shot, roll.status.replace("_", " "), roll.date_loaded),
+            )
+        self._lbl_detail.config(text="")
+        self._set_action_buttons_state("disabled")
+        self._selected_roll_id = None
+
+    def _on_select(self, _event: tk.Event) -> None:  # type: ignore[type-arg]
+        sel = self._tree.selection()
+        if not sel:
+            return
+        self._selected_roll_id = sel[0]
+        roll = self._roll_log.get_roll(self._selected_roll_id)
+        if roll is None:
+            return
+        parts = []
+        if roll.lens:
+            parts.append(f"Lens: {roll.lens}")
+        if roll.location:
+            parts.append(f"Location: {roll.location}")
+        if roll.lab:
+            parts.append(f"Lab: {roll.lab}")
+        if roll.scanned:
+            parts.append("Scanned")
+        if roll.notes:
+            parts.append(f"Notes: {roll.notes}")
+        self._lbl_detail.config(text="  |  ".join(parts) if parts else "No additional details.")
+        self._set_action_buttons_state("normal")
+
+    def _set_action_buttons_state(self, state: str) -> None:
+        for btn in (self._btn_frame, self._btn_finish, self._btn_develop, self._btn_note):
+            btn.config(state=state)
+
+    def _require_selection(self) -> str | None:
+        if not self._selected_roll_id:
+            messagebox.showinfo("No Selection", "Select a roll first.", parent=self._win)
+            return None
+        return self._selected_roll_id
+
+    def _cmd_new_roll(self) -> None:
+        NewRollDialog(self._win, self._catalog, self._roll_log, on_created=self._refresh)
+
+    def _cmd_frame(self) -> None:
+        roll_id = self._require_selection()
+        if roll_id is None:
+            return
+        try:
+            self._roll_log.increment_frame(roll_id)
+            self._refresh()
+            self._tree.selection_set(roll_id)
+            self._tree.see(roll_id)
+        except ValueError as exc:
+            messagebox.showerror("Error", str(exc), parent=self._win)
+
+    def _cmd_finish(self) -> None:
+        roll_id = self._require_selection()
+        if roll_id is None:
+            return
+        try:
+            self._roll_log.mark_finished(roll_id)
+            self._refresh()
+        except ValueError as exc:
+            messagebox.showerror("Error", str(exc), parent=self._win)
+
+    def _cmd_develop(self) -> None:
+        roll_id = self._require_selection()
+        if roll_id is None:
+            return
+        lab = simpledialog.askstring("Lab", "Lab name (optional):", parent=self._win)
+        try:
+            self._roll_log.set_developed(roll_id, lab=lab)
+            self._refresh()
+        except ValueError as exc:
+            messagebox.showerror("Error", str(exc), parent=self._win)
+
+    def _cmd_note(self) -> None:
+        roll_id = self._require_selection()
+        if roll_id is None:
+            return
+        note = simpledialog.askstring("Add Note", "Enter note:", parent=self._win)
+        if not note or not note.strip():
+            return
+        try:
+            self._roll_log.attach_note(roll_id, note)
+            self._refresh()
+            self._tree.selection_set(roll_id)
+            self._on_select(None)  # type: ignore[arg-type]
+        except ValueError as exc:
+            messagebox.showerror("Error", str(exc), parent=self._win)
+
+
+# ---------------------------------------------------------------------------
+# New Roll Dialog
+# ---------------------------------------------------------------------------
+
+class NewRollDialog:
+    def __init__(
+        self,
+        parent: tk.Toplevel,
+        catalog: FilmCatalog,
+        roll_log: RollLog,
+        on_created: object,
+    ) -> None:
+        self._catalog = catalog
+        self._roll_log = roll_log
+        self._on_created = on_created
+        self._all_films = catalog.filter()
+
+        self._win = tb.Toplevel(parent)
+        self._win.title("New Roll")
+        self._win.transient(parent)
+        self._win.geometry("420x400")
+        self._win.resizable(False, True)
+
+        self._var_search = tk.StringVar()
+        self._var_camera = tk.StringVar()
+        self._var_lens   = tk.StringVar()
+        self._var_loc    = tk.StringVar()
+        self._selected_film: FilmStock | None = None
+
+        self._build()
+        self._win.grab_set()
+
+    def _build(self) -> None:
+        outer = ttk.Frame(self._win, padding=12)
+        outer.pack(fill="both", expand=True)
+
+        # Film search
+        ttk.Label(outer, text="Film (type to filter):").pack(anchor="w")
+        ttk.Entry(outer, textvariable=self._var_search).pack(fill="x", pady=(2, 4))
+        self._var_search.trace_add("write", self._on_search_change)
+
+        film_frame = ttk.Frame(outer)
+        film_frame.pack(fill="both", expand=True)
+        film_frame.columnconfigure(0, weight=1)
+        film_frame.rowconfigure(0, weight=1)
+
+        self._lb = tk.Listbox(film_frame, exportselection=False)
+        lbvsb = ttk.Scrollbar(film_frame, orient="vertical", command=self._lb.yview)
+        self._lb.configure(yscrollcommand=lbvsb.set)
+        self._lb.grid(row=0, column=0, sticky="nsew")
+        lbvsb.grid(row=0, column=1, sticky="ns")
+        self._lb.bind("<<ListboxSelect>>", self._on_film_pick)
+        self._populate_listbox(self._all_films)
+
+        self._lbl_film = ttk.Label(outer, text="", foreground="#2563eb")
+        self._lbl_film.pack(anchor="w", pady=(4, 0))
+
+        # Camera / lens / location
+        form = ttk.Frame(outer)
+        form.pack(fill="x", pady=(6, 0))
+        form.columnconfigure(1, weight=1)
+
+        for row, (label, var) in enumerate([
+            ("Camera *:", self._var_camera),
+            ("Lens:",     self._var_lens),
+            ("Location:", self._var_loc),
+        ]):
+            ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=2, padx=(0, 6))
+            ttk.Entry(form, textvariable=var).grid(row=row, column=1, sticky="ew", pady=2)
+
+        # Buttons
+        btn_row = ttk.Frame(outer)
+        btn_row.pack(anchor="e", pady=(10, 0))
+        ttk.Button(btn_row, text="Cancel", command=self._win.destroy).pack(side="left", padx=4)
+        ttk.Button(btn_row, text="Create Roll", command=self._submit).pack(side="left")
+
+    def _populate_listbox(self, films: list[FilmStock]) -> None:
+        self._lb.delete(0, "end")
+        for film in films:
+            self._lb.insert("end", f"{film.name}  (ISO {film.iso}, {film.process})")
+        self._listbox_films = films
+
+    def _on_search_change(self, *_: object) -> None:
+        q = self._var_search.get().strip()
+        if q:
+            results = self._catalog.search(q)
+        else:
+            results = self._all_films
+        self._populate_listbox(results)
+        self._selected_film = None
+        self._lbl_film.config(text="")
+
+    def _on_film_pick(self, _event: tk.Event) -> None:  # type: ignore[type-arg]
+        sel = self._lb.curselection()
+        if not sel:
+            return
+        self._selected_film = self._listbox_films[sel[0]]
+        self._lbl_film.config(text=f"Selected: {self._selected_film.name}")
+
+    def _submit(self) -> None:
+        if self._selected_film is None:
+            messagebox.showerror("No Film", "Please select a film stock.", parent=self._win)
+            return
+        camera = self._var_camera.get().strip()
+        if not camera:
+            messagebox.showerror("Camera Required", "Please enter a camera name.", parent=self._win)
+            return
+        try:
+            self._roll_log.create_roll(
+                film_id=self._selected_film.id,
+                camera=camera,
+                lens=self._var_lens.get() or None,
+                location=self._var_loc.get() or None,
+            )
+            self._win.destroy()
+            if callable(self._on_created):
+                self._on_created()
+        except ValueError as exc:
+            messagebox.showerror("Error", str(exc), parent=self._win)
+
+
+# ---------------------------------------------------------------------------
 
 
 def main() -> None:
