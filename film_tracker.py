@@ -689,7 +689,7 @@ class FilmTrackerApp:
 
         self.root.wait_window(window)
 
-    def _restore_collection_pane_width(self) -> None:
+    def _restore_collection_pane_width(self, attempt: int = 0) -> None:
         if self.main_paned is None:
             return
 
@@ -698,7 +698,9 @@ class FilmTrackerApp:
 
         self.root.update_idletasks()
         total_width = self.main_paned.winfo_width()
-        if total_width <= 0:
+        if total_width <= 1:
+            if attempt < 10:
+                self.root.after(30, lambda: self._restore_collection_pane_width(attempt + 1))
             return
 
         min_left = 220
