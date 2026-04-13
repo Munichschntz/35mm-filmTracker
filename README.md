@@ -1,5 +1,3 @@
-# llm-experiments
-
 ## 35mm Film Shot Tracker
 
 This repository now includes a Tkinter desktop app for tracking film shots per roll collection.
