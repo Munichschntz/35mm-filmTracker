@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import sys
 import tkinter as tk
 import tkinter.font as tkfont
 import tkinter.simpledialog as simpledialog
@@ -2269,6 +2270,7 @@ def main() -> None:
     root = tb.Window(themename="litera")
     app = FilmTrackerApp(root)
     root.mainloop()
+    sys.exit(0)
 
 
 if __name__ == "__main__":
