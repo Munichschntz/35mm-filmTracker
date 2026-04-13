@@ -443,7 +443,7 @@ class FilmTrackerApp:
         self.collection_list.column("label", anchor="w")
         self.collection_list.grid(row=0, column=0, sticky="nsew")
         self.collection_list.bind("<<TreeviewSelect>>", self._on_collection_selected)
-    self.collection_list.bind("<Double-1>", lambda _e: self._edit_collection())
+        self.collection_list.bind("<Double-1>", lambda _e: self._edit_collection())
 
         scrollbar = ttk.Scrollbar(panel, orient="vertical", command=self.collection_list.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
