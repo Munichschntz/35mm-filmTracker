@@ -321,6 +321,215 @@ class CollectionMetadataDialog(BaseDialog):
         return self.result
 
 
+# ---------------------------------------------------------------------------
+# Quick Tips Dialog
+# ---------------------------------------------------------------------------
+
+class QuickTipsDialog(BaseDialog):
+    _TIPS = (
+        "Capture: use Save + Next for sequential frame-by-frame entry.\n\n"
+        "Review: filter by status to focus on processing stages "
+        "(shot \u2192 developed \u2192 scanned \u2192 edited \u2192 printed).\n\n"
+        "Organize: use Edit to keep roll-level metadata (film stock, camera, "
+        "lens, capacity) complete.\n\n"
+        "Bulk Update: select multiple shots in the list, choose a status, "
+        "and click Mark Selected \u2014 or use Mark Visible to update all shown rows at once."
+    )
+
+    def __init__(self, parent: tk.Tk) -> None:
+        self._init_window(parent, "Quick Tips", 620, 320)
+
+        content = ttk.Frame(self._win, padding=12)
+        content.grid(row=0, column=0, sticky="nsew")
+        self._win.columnconfigure(0, weight=1)
+        self._win.rowconfigure(0, weight=1)
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(1, weight=1)
+
+        ttk.Label(content, text="Quick Tips").grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ttk.Label(
+            content, text=self._TIPS, justify="left", wraplength=580,
+        ).grid(row=1, column=0, sticky="nsew")
+
+        button_row = ttk.Frame(content)
+        button_row.grid(row=2, column=0, sticky="e", pady=(12, 0))
+
+        close_button = ttk.Button(button_row, text="Close", command=self._win.destroy)
+        close_button.grid(row=0, column=0)
+        close_button.focus_set()
+
+        self._win.bind("<Escape>", lambda _e: self._win.destroy())
+        self._win.bind("<Return>", lambda _e: self._win.destroy())
+        self._win.protocol("WM_DELETE_WINDOW", self._win.destroy)
+        self._win.grab_set()
+        parent.wait_window(self._win)
+
+
+# ---------------------------------------------------------------------------
+# Preferences Dialog
+# ---------------------------------------------------------------------------
+
+class PreferencesDialog(BaseDialog):
+    """Modal preferences window.
+
+    Receives current preference values and preset lists at construction time,
+    then calls ``on_save`` with keyword arguments when the user saves.
+    The caller is responsible for persisting changes and updating the UI.
+    """
+
+    def __init__(
+        self,
+        parent: tk.Tk,
+        status_values: tuple[str, ...],
+        current_prefs: dict[str, str],
+        camera_presets: list[str],
+        lens_presets: list[str],
+        open_camera_manager: object,
+        open_lens_manager: object,
+        on_save: object,
+    ) -> None:
+        self._status_values = status_values
+        self._camera_presets: list[str] = list(camera_presets)
+        self._lens_presets: list[str] = list(lens_presets)
+        self._open_camera_manager = open_camera_manager
+        self._open_lens_manager = open_lens_manager
+        self._on_save = on_save
+
+        self._init_window(parent, "Preferences", 560, 360, min_width=560, min_height=360)
+
+        content = ttk.Frame(self._win, padding=12)
+        content.grid(row=0, column=0, sticky="nsew")
+        self._win.columnconfigure(0, weight=1)
+        self._win.rowconfigure(0, weight=1)
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(0, weight=1)
+
+        notebook = ttk.Notebook(content)
+        notebook.grid(row=0, column=0, sticky="nsew")
+
+        general_tab  = ttk.Frame(notebook, padding=12)
+        quick_tab    = ttk.Frame(notebook, padding=12)
+        metadata_tab = ttk.Frame(notebook, padding=12)
+        notebook.add(general_tab,  text="General")
+        notebook.add(quick_tab,    text="Quick Entry")
+        notebook.add(metadata_tab, text="Metadata")
+
+        self._default_status_var = tk.StringVar(value=current_prefs["default_shot_status"])
+        self._default_filter_var = tk.StringVar(value=current_prefs["default_status_filter"])
+        self._clear_notes_var    = tk.BooleanVar(value=current_prefs.get("save_next_clear_notes") == "true")
+        self._ctrl_enter_var     = tk.BooleanVar(value=current_prefs.get("enable_ctrl_enter_save_next") == "true")
+        self._show_metadata_var  = tk.BooleanVar(value=current_prefs.get("show_collection_metadata_header") == "true")
+        self._camera_summary_var = tk.StringVar()
+        self._lens_summary_var   = tk.StringVar()
+
+        self._build_general_tab(general_tab)
+        self._build_quick_tab(quick_tab)
+        self._build_metadata_tab(metadata_tab)
+        self._refresh_preset_summaries()
+
+        buttons = ttk.Frame(content)
+        buttons.grid(row=1, column=0, sticky="e", pady=(12, 0))
+        ttk.Button(buttons, text="Cancel", command=self._win.destroy).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(buttons, text="Save",   command=self._save).grid(row=0, column=1)
+
+        self._win.grab_set()
+
+    def _build_general_tab(self, tab: ttk.Frame) -> None:
+        ttk.Label(tab, text="Default shot status for new entries").grid(row=0, column=0, sticky="w")
+        ttk.Combobox(
+            tab, textvariable=self._default_status_var,
+            values=self._status_values, state="readonly", width=16,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        ttk.Label(tab, text="Default status filter when app starts").grid(row=2, column=0, sticky="w")
+        ttk.Combobox(
+            tab, textvariable=self._default_filter_var,
+            values=("all", *self._status_values), state="readonly", width=16,
+        ).grid(row=3, column=0, sticky="w", pady=(4, 12))
+
+        ttk.Label(
+            tab, text="Use these defaults to match your most common workflow.",
+        ).grid(row=4, column=0, sticky="w")
+
+    def _build_quick_tab(self, tab: ttk.Frame) -> None:
+        ttk.Checkbutton(
+            tab, text="Enable Ctrl+Enter to Save + Next",
+            variable=self._ctrl_enter_var,
+        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ttk.Checkbutton(
+            tab, text="Clear notes after Save + Next",
+            variable=self._clear_notes_var,
+        ).grid(row=1, column=0, sticky="w", pady=(0, 8))
+        ttk.Label(
+            tab,
+            text="Quick Entry is designed for rapid frame-by-frame logging while shooting.",
+        ).grid(row=2, column=0, sticky="w")
+
+    def _build_metadata_tab(self, tab: ttk.Frame) -> None:
+        ttk.Checkbutton(
+            tab, text="Show collection metadata summary in shot header",
+            variable=self._show_metadata_var,
+        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ttk.Label(
+            tab,
+            text="Metadata helps identify film stock, camera, and lens context while reviewing shots.",
+        ).grid(row=1, column=0, sticky="w")
+        ttk.Label(
+            tab,
+            text="Use Manage to add or remove list entries. These presets are reused in collection metadata dialogs.",
+        ).grid(row=2, column=0, sticky="w", pady=(6, 0))
+
+        ttk.Label(tab, text="Camera presets").grid(row=3, column=0, sticky="w", pady=(12, 0))
+        cam_frame = ttk.Frame(tab)
+        cam_frame.grid(row=4, column=0, sticky="ew", pady=(4, 8))
+        cam_frame.columnconfigure(0, weight=1)
+        ttk.Label(cam_frame, textvariable=self._camera_summary_var).grid(row=0, column=0, sticky="w", padx=(0, 4))
+        ttk.Button(cam_frame, text="Manage", command=self._manage_cameras, width=10).grid(row=0, column=1, sticky="ew")
+
+        ttk.Label(tab, text="Lens presets").grid(row=5, column=0, sticky="w")
+        lens_frame = ttk.Frame(tab)
+        lens_frame.grid(row=6, column=0, sticky="ew", pady=(4, 0))
+        lens_frame.columnconfigure(0, weight=1)
+        ttk.Label(lens_frame, textvariable=self._lens_summary_var).grid(row=0, column=0, sticky="w", padx=(0, 4))
+        ttk.Button(lens_frame, text="Manage", command=self._manage_lenses, width=10).grid(row=0, column=1, sticky="ew")
+
+    def _refresh_preset_summaries(self) -> None:
+        def _fmt(values: list[str]) -> str:
+            return ", ".join(values) if values else "No presets saved."
+        self._camera_summary_var.set(_fmt(self._camera_presets))
+        self._lens_summary_var.set(_fmt(self._lens_presets))
+
+    def _manage_cameras(self) -> None:
+        result = self._open_camera_manager(self._camera_presets)  # type: ignore[operator]
+        if result is not None:
+            self._camera_presets = [v.strip() for v in result if v.strip()]
+            self._refresh_preset_summaries()
+
+    def _manage_lenses(self) -> None:
+        result = self._open_lens_manager(self._lens_presets)  # type: ignore[operator]
+        if result is not None:
+            self._lens_presets = [v.strip() for v in result if v.strip()]
+            self._refresh_preset_summaries()
+
+    def _save(self) -> None:
+        if self._default_status_var.get() not in self._status_values:
+            messagebox.showerror("Validation Error", "Invalid default shot status.", parent=self._win)
+            return
+        if self._default_filter_var.get() not in ("all", *self._status_values):
+            messagebox.showerror("Validation Error", "Invalid default status filter.", parent=self._win)
+            return
+        self._on_save(  # type: ignore[operator]
+            default_shot_status=self._default_status_var.get(),
+            default_status_filter=self._default_filter_var.get(),
+            save_next_clear_notes=self._clear_notes_var.get(),
+            enable_ctrl_enter_save_next=self._ctrl_enter_var.get(),
+            show_collection_metadata_header=self._show_metadata_var.get(),
+            camera_presets=self._camera_presets,
+            lens_presets=self._lens_presets,
+        )
+        self._win.destroy()
+
+
 class FilmTrackerApp:
     STATUS_VALUES = ("shot", "developed", "scanned", "edited", "printed")
     DEFAULT_COLLECTION_PANE_WIDTH = 340
@@ -692,48 +901,7 @@ class FilmTrackerApp:
         self.notes_text.bind("<<Modified>>", self._on_notes_modified)
 
     def _show_help_tips(self) -> None:
-        tips = (
-            "Quick Tips\n\n"
-            "Capture: use Save + Next for sequential frame-by-frame entry.\n\n"
-            "Review: filter by status to focus on processing stages "
-            "(shot \u2192 developed \u2192 scanned \u2192 edited \u2192 printed).\n\n"
-            "Organize: use Edit to keep roll-level metadata (film stock, camera, "
-            "lens, capacity) complete.\n\n"
-            "Bulk Update: select multiple shots in the list, choose a status, "
-            "and click Mark Selected — or use Mark Visible to update all shown rows at once."
-        )
-        window = tb.Toplevel(self.root)
-        window.title("Quick Tips")
-        window.transient(self.root)
-        window.grab_set()
-        window.resizable(True, True)
-        center_dialog_over_parent(window, self.root, 620, 320)
-
-        content = ttk.Frame(window, padding=12)
-        content.grid(row=0, column=0, sticky="nsew")
-        window.columnconfigure(0, weight=1)
-        window.rowconfigure(0, weight=1)
-        content.columnconfigure(0, weight=1)
-        content.rowconfigure(1, weight=1)
-
-        ttk.Label(content, text="Quick Tips").grid(row=0, column=0, sticky="w", pady=(0, 8))
-        ttk.Label(content, text=tips.split("\n\n", 1)[1], justify="left", wraplength=580).grid(row=1, column=0, sticky="nsew")
-
-        button_row = ttk.Frame(content)
-        button_row.grid(row=2, column=0, sticky="e", pady=(12, 0))
-
-        def _close_dialog() -> None:
-            window.destroy()
-
-        close_button = ttk.Button(button_row, text="Close", command=_close_dialog)
-        close_button.grid(row=0, column=0)
-        close_button.focus_set()
-
-        window.bind("<Escape>", lambda _event: _close_dialog())
-        window.bind("<Return>", lambda _event: _close_dialog())
-        window.protocol("WM_DELETE_WINDOW", _close_dialog)
-
-        self.root.wait_window(window)
+        QuickTipsDialog(self.root)
 
     def _restore_collection_pane_width(self, attempt: int = 0) -> None:
         if self.main_paned is None:
@@ -818,170 +986,41 @@ class FilmTrackerApp:
         self.db.set_preference("default_status_filter", current_filter)
 
     def _open_preferences_window(self) -> None:
-        window = tb.Toplevel(self.root)
-        window.title("Preferences")
-        window.transient(self.root)
-        window.grab_set()
-        window.minsize(560, 360)
-        center_dialog_over_parent(window, self.root, 560, 360)
+        PreferencesDialog(
+            parent=self.root,
+            status_values=self.STATUS_VALUES,
+            current_prefs=self.preferences,
+            camera_presets=self._get_preset_list("camera_presets"),
+            lens_presets=self._get_preset_list("lens_presets"),
+            open_camera_manager=self._manage_camera_presets,
+            open_lens_manager=self._manage_lens_presets,
+            on_save=self._apply_preferences,
+        )
 
-        content = ttk.Frame(window, padding=12)
-        content.grid(row=0, column=0, sticky="nsew")
-        content.columnconfigure(0, weight=1)
-        content.rowconfigure(0, weight=1)
+    def _apply_preferences(
+        self,
+        *,
+        default_shot_status: str,
+        default_status_filter: str,
+        save_next_clear_notes: bool,
+        enable_ctrl_enter_save_next: bool,
+        show_collection_metadata_header: bool,
+        camera_presets: list[str],
+        lens_presets: list[str],
+    ) -> None:
+        self.preferences["default_shot_status"] = default_shot_status
+        self.preferences["default_status_filter"] = default_status_filter
+        self.preferences["save_next_clear_notes"] = "true" if save_next_clear_notes else "false"
+        self.preferences["enable_ctrl_enter_save_next"] = "true" if enable_ctrl_enter_save_next else "false"
+        self.preferences["show_collection_metadata_header"] = "true" if show_collection_metadata_header else "false"
+        self._set_preset_list("camera_presets", camera_presets)
+        self._set_preset_list("lens_presets", lens_presets)
+        self._save_preferences()
 
-        notebook = ttk.Notebook(content)
-        notebook.grid(row=0, column=0, sticky="nsew")
-
-        general_tab = ttk.Frame(notebook, padding=12)
-        quick_tab = ttk.Frame(notebook, padding=12)
-        metadata_tab = ttk.Frame(notebook, padding=12)
-
-        notebook.add(general_tab, text="General")
-        notebook.add(quick_tab, text="Quick Entry")
-        notebook.add(metadata_tab, text="Metadata")
-
-        default_status_var = tk.StringVar(value=self.preferences["default_shot_status"])
-        default_filter_var = tk.StringVar(value=self.preferences["default_status_filter"])
-        clear_notes_var = tk.BooleanVar(value=self._preference_bool("save_next_clear_notes"))
-        ctrl_enter_var = tk.BooleanVar(value=self._preference_bool("enable_ctrl_enter_save_next"))
-        show_metadata_var = tk.BooleanVar(value=self._preference_bool("show_collection_metadata_header"))
-        camera_presets = self._get_preset_list("camera_presets")
-        lens_presets = self._get_preset_list("lens_presets")
-        camera_summary_var = tk.StringVar()
-        lens_summary_var = tk.StringVar()
-
-        def _preset_summary(values: list[str]) -> str:
-            return ", ".join(values) if values else "No presets saved."
-
-        def _refresh_preset_summaries() -> None:
-            camera_summary_var.set(_preset_summary(camera_presets))
-            lens_summary_var.set(_preset_summary(lens_presets))
-
-        def _open_camera_manager() -> None:
-            nonlocal camera_presets
-            result = self._manage_camera_presets(camera_presets)
-            if result is not None:
-                camera_presets = [value.strip() for value in result if value.strip()]
-                _refresh_preset_summaries()
-
-        def _open_lens_manager() -> None:
-            nonlocal lens_presets
-            result = self._manage_lens_presets(lens_presets)
-            if result is not None:
-                lens_presets = [value.strip() for value in result if value.strip()]
-                _refresh_preset_summaries()
-
-        _refresh_preset_summaries()
-
-        ttk.Label(general_tab, text="Default shot status for new entries").grid(row=0, column=0, sticky="w")
-        ttk.Combobox(
-            general_tab,
-            textvariable=default_status_var,
-            values=self.STATUS_VALUES,
-            state="readonly",
-            width=16,
-        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
-
-        ttk.Label(general_tab, text="Default status filter when app starts").grid(row=2, column=0, sticky="w")
-        ttk.Combobox(
-            general_tab,
-            textvariable=default_filter_var,
-            values=("all", *self.STATUS_VALUES),
-            state="readonly",
-            width=16,
-        ).grid(row=3, column=0, sticky="w", pady=(4, 12))
-
-        ttk.Label(
-            general_tab,
-            text="Use these defaults to match your most common workflow.",
-        ).grid(row=4, column=0, sticky="w")
-
-        ttk.Checkbutton(
-            quick_tab,
-            text="Enable Ctrl+Enter to Save + Next",
-            variable=ctrl_enter_var,
-        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
-
-        ttk.Checkbutton(
-            quick_tab,
-            text="Clear notes after Save + Next",
-            variable=clear_notes_var,
-        ).grid(row=1, column=0, sticky="w", pady=(0, 8))
-
-        ttk.Label(
-            quick_tab,
-            text="Quick Entry is designed for rapid frame-by-frame logging while shooting.",
-        ).grid(row=2, column=0, sticky="w")
-
-        ttk.Checkbutton(
-            metadata_tab,
-            text="Show collection metadata summary in shot header",
-            variable=show_metadata_var,
-        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
-
-        ttk.Label(
-            metadata_tab,
-            text="Metadata helps identify film stock, camera, and lens context while reviewing shots.",
-        ).grid(row=1, column=0, sticky="w")
-        ttk.Label(
-            metadata_tab,
-            text="Use Manage to add or remove list entries. These presets are reused in collection metadata dialogs.",
-        ).grid(row=2, column=0, sticky="w", pady=(6, 0))
-
-        ttk.Label(metadata_tab, text="Camera presets").grid(row=3, column=0, sticky="w", pady=(12, 0))
-        camera_preset_frame = ttk.Frame(metadata_tab)
-        camera_preset_frame.grid(row=4, column=0, sticky="ew", pady=(4, 8))
-        camera_preset_frame.columnconfigure(0, weight=1)
-        ttk.Label(camera_preset_frame, textvariable=camera_summary_var).grid(row=0, column=0, sticky="w", padx=(0, 4))
-        ttk.Button(
-            camera_preset_frame,
-            text="Manage",
-            command=_open_camera_manager,
-            width=10,
-        ).grid(row=0, column=1, sticky="ew")
-
-        ttk.Label(metadata_tab, text="Lens presets").grid(row=5, column=0, sticky="w")
-        lens_preset_frame = ttk.Frame(metadata_tab)
-        lens_preset_frame.grid(row=6, column=0, sticky="ew", pady=(4, 0))
-        lens_preset_frame.columnconfigure(0, weight=1)
-        ttk.Label(lens_preset_frame, textvariable=lens_summary_var).grid(row=0, column=0, sticky="w", padx=(0, 4))
-        ttk.Button(
-            lens_preset_frame,
-            text="Manage",
-            command=_open_lens_manager,
-            width=10,
-        ).grid(row=0, column=1, sticky="ew")
-
-        buttons = ttk.Frame(content)
-        buttons.grid(row=1, column=0, sticky="e", pady=(12, 0))
-
-        def apply_preferences() -> None:
-            if default_status_var.get() not in self.STATUS_VALUES:
-                messagebox.showerror("Validation Error", "Invalid default shot status.", parent=window)
-                return
-            if default_filter_var.get() not in ("all", *self.STATUS_VALUES):
-                messagebox.showerror("Validation Error", "Invalid default status filter.", parent=window)
-                return
-
-            self.preferences["default_shot_status"] = default_status_var.get()
-            self.preferences["default_status_filter"] = default_filter_var.get()
-            self.preferences["save_next_clear_notes"] = "true" if clear_notes_var.get() else "false"
-            self.preferences["enable_ctrl_enter_save_next"] = "true" if ctrl_enter_var.get() else "false"
-            self.preferences["show_collection_metadata_header"] = "true" if show_metadata_var.get() else "false"
-            self._set_preset_list("camera_presets", camera_presets)
-            self._set_preset_list("lens_presets", lens_presets)
-            self._save_preferences()
-
-            self.active_status_filter.set(default_filter_var.get())
-            self._load_shots_for_selected_collection()
-            if self.selected_shot_id is None:
-                self.status_var.set(self.preferences["default_shot_status"])
-
-            window.destroy()
-
-        ttk.Button(buttons, text="Cancel", command=window.destroy).grid(row=0, column=0, padx=(0, 8))
-        ttk.Button(buttons, text="Save", command=apply_preferences).grid(row=0, column=1)
+        self.active_status_filter.set(default_status_filter)
+        self._load_shots_for_selected_collection()
+        if self.selected_shot_id is None:
+            self.status_var.set(default_shot_status)
 
     def _parse_optional_iso(self, value: str | None) -> int | None:
         return ValidationUtils.parse_optional_iso(value)
