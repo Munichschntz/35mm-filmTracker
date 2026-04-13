@@ -10,6 +10,19 @@ import ttkbootstrap as tb
 from db import FilmDatabase
 
 
+def center_dialog_over_parent(window: tk.Toplevel, parent: tk.Tk, min_width: int, min_height: int) -> None:
+    window.update_idletasks()
+    parent_x = parent.winfo_x()
+    parent_y = parent.winfo_y()
+    parent_width = parent.winfo_width()
+    parent_height = parent.winfo_height()
+    dialog_width = max(min_width, window.winfo_reqwidth())
+    dialog_height = max(min_height, window.winfo_reqheight())
+    pos_x = parent_x + (parent_width - dialog_width) // 2
+    pos_y = parent_y + (parent_height - dialog_height) // 2
+    window.geometry(f"{dialog_width}x{dialog_height}+{max(0, pos_x)}+{max(0, pos_y)}")
+
+
 class ValidationUtils:
     @staticmethod
     def parse_optional_iso(value: str | None) -> int | None:
@@ -69,6 +82,7 @@ class CameraLensManagerDialog:
         self.window.grab_set()
         self.window.resizable(True, True)
         self.window.geometry("400x350")
+        center_dialog_over_parent(self.window, parent, 400, 350)
 
         body = ttk.Frame(self.window, padding=12)
         body.grid(row=0, column=0, sticky="nsew")
@@ -186,6 +200,7 @@ class CollectionMetadataDialog:
         self.window.transient(parent)
         self.window.grab_set()
         self.window.resizable(False, False)
+        center_dialog_over_parent(self.window, parent, 560, 320)
 
         body = ttk.Frame(self.window, padding=12)
         body.grid(row=0, column=0, sticky="nsew")
@@ -575,18 +590,7 @@ class FilmTrackerApp:
         window.transient(self.root)
         window.grab_set()
         window.minsize(560, 360)
-
-        # Center the preferences dialog over the main application window.
-        window.update_idletasks()
-        root_x = self.root.winfo_x()
-        root_y = self.root.winfo_y()
-        root_width = self.root.winfo_width()
-        root_height = self.root.winfo_height()
-        dialog_width = max(560, window.winfo_reqwidth())
-        dialog_height = max(360, window.winfo_reqheight())
-        pos_x = root_x + (root_width - dialog_width) // 2
-        pos_y = root_y + (root_height - dialog_height) // 2
-        window.geometry(f"{dialog_width}x{dialog_height}+{max(0, pos_x)}+{max(0, pos_y)}")
+        center_dialog_over_parent(window, self.root, 560, 360)
 
         content = ttk.Frame(window, padding=12)
         content.grid(row=0, column=0, sticky="nsew")
@@ -906,7 +910,7 @@ class FilmTrackerApp:
                 details["push_pull"],
             )
         except Exception as exc:
-            messagebox.showerror("Database Error", f"Could not create collection.\n\n{exc}")
+            messagebox.showerror("Database Error", f"Could not create collection.\n\n{exc}", parent=self.root)
             return
 
         self.selected_collection_id = new_id
@@ -917,12 +921,12 @@ class FilmTrackerApp:
     def _edit_collection(self) -> None:
         collection_id = self._get_selected_collection_id()
         if collection_id is None:
-            messagebox.showinfo("Select Collection", "Select a collection to edit.")
+            messagebox.showinfo("Select Collection", "Select a collection to edit.", parent=self.root)
             return
 
         row = self.db.get_collection(collection_id)
         if row is None:
-            messagebox.showerror("Database Error", "Could not load collection metadata.")
+            messagebox.showerror("Database Error", "Could not load collection metadata.", parent=self.root)
             return
 
         details = self._prompt_collection_details(
@@ -952,7 +956,7 @@ class FilmTrackerApp:
                 details["push_pull"],
             )
         except Exception as exc:
-            messagebox.showerror("Database Error", f"Could not update collection metadata.\n\n{exc}")
+            messagebox.showerror("Database Error", f"Could not update collection metadata.\n\n{exc}", parent=self.root)
             return
 
         self.selected_collection_id = collection_id
@@ -963,13 +967,14 @@ class FilmTrackerApp:
     def _delete_collection(self) -> None:
         collection_id = self._get_selected_collection_id()
         if collection_id is None:
-            messagebox.showinfo("Select Collection", "Select a collection to delete.")
+            messagebox.showinfo("Select Collection", "Select a collection to delete.", parent=self.root)
             return
 
         count = self.db.shot_count_for_collection(collection_id)
         confirm = messagebox.askyesno(
             "Delete Collection",
             f"Delete this collection and its {count} shot(s)? This cannot be undone.",
+            parent=self.root,
         )
         if not confirm:
             return
@@ -977,7 +982,7 @@ class FilmTrackerApp:
         try:
             self.db.delete_collection(collection_id)
         except Exception as exc:
-            messagebox.showerror("Database Error", f"Could not delete collection.\n\n{exc}")
+            messagebox.showerror("Database Error", f"Could not delete collection.\n\n{exc}", parent=self.root)
             return
 
         self.selected_collection_id = None
@@ -990,7 +995,7 @@ class FilmTrackerApp:
     def _export_shots_csv(self) -> None:
         collection_id = self._get_selected_collection_id()
         if collection_id is None:
-            messagebox.showinfo("Select Collection", "Select a collection to export.")
+            messagebox.showinfo("Select Collection", "Select a collection to export.", parent=self.root)
             return
 
         row = self.db.get_collection(collection_id)
@@ -1002,6 +1007,7 @@ class FilmTrackerApp:
             defaultextension=".csv",
             initialfile=f"{suggested_name}_shots.csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            parent=self.root,
         )
         if not file_path:
             return
@@ -1024,20 +1030,21 @@ class FilmTrackerApp:
                         "created_at": row_data["created_at"] or "",
                     })
         except Exception as exc:
-            messagebox.showerror("Export Error", f"Could not export CSV.\n\n{exc}")
+            messagebox.showerror("Export Error", f"Could not export CSV.\n\n{exc}", parent=self.root)
             return
 
-        messagebox.showinfo("Export Complete", f"Exported {len(rows)} shot(s) to:\n{file_path}")
+        messagebox.showinfo("Export Complete", f"Exported {len(rows)} shot(s) to:\n{file_path}", parent=self.root)
 
     def _import_shots_csv(self) -> None:
         collection_id = self._get_selected_collection_id()
         if collection_id is None:
-            messagebox.showinfo("Select Collection", "Select a collection before importing shots.")
+            messagebox.showinfo("Select Collection", "Select a collection before importing shots.", parent=self.root)
             return
 
         file_path = filedialog.askopenfilename(
             title="Import Shots from CSV",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            parent=self.root,
         )
         if not file_path:
             return
@@ -1055,6 +1062,7 @@ class FilmTrackerApp:
                     messagebox.showerror(
                         "Import Error",
                         f"CSV is missing required columns: {', '.join(sorted(missing))}",
+                        parent=self.root,
                     )
                     return
 
@@ -1085,11 +1093,11 @@ class FilmTrackerApp:
                     except ValueError as exc:
                         parse_errors.append(f"Line {index}: {exc}")
         except Exception as exc:
-            messagebox.showerror("Import Error", f"Could not read CSV file.\n\n{exc}")
+            messagebox.showerror("Import Error", f"Could not read CSV file.\n\n{exc}", parent=self.root)
             return
 
         if not parsed_rows and not parse_errors:
-            messagebox.showinfo("Import Shots", "No rows found to import.")
+            messagebox.showinfo("Import Shots", "No rows found to import.", parent=self.root)
             return
 
         inserted_count, db_errors = self.db.bulk_insert_shots(collection_id, parsed_rows)
@@ -1106,7 +1114,7 @@ class FilmTrackerApp:
         if detail_lines:
             detail_text = "\n\nDetails (first 5):\n" + "\n".join(detail_lines)
 
-        messagebox.showinfo("Import Complete", "\n".join(messages) + detail_text)
+        messagebox.showinfo("Import Complete", "\n".join(messages) + detail_text, parent=self.root)
 
     # Shots
     def _load_shots_for_selected_collection(self) -> None:
@@ -1189,10 +1197,10 @@ class FilmTrackerApp:
         status_raw = self.status_var.get().strip()
 
         if not shutter:
-            messagebox.showerror("Validation Error", "Shutter speed is required.")
+            messagebox.showerror("Validation Error", "Shutter speed is required.", parent=self.root)
             return None
         if not f_stop:
-            messagebox.showerror("Validation Error", "F-stop is required.")
+            messagebox.showerror("Validation Error", "F-stop is required.", parent=self.root)
             return None
 
         frame_value: int | None = None
@@ -1200,7 +1208,7 @@ class FilmTrackerApp:
             try:
                 frame_value = ValidationUtils.parse_optional_frame(frame_raw)
             except ValueError as exc:
-                messagebox.showerror("Validation Error", str(exc))
+                messagebox.showerror("Validation Error", str(exc), parent=self.root)
                 return None
 
             if self.selected_collection_id is not None and self.db.frame_number_exists(
@@ -1211,6 +1219,7 @@ class FilmTrackerApp:
                 messagebox.showerror(
                     "Validation Error",
                     f"Frame {frame_value} already exists in this collection.",
+                    parent=self.root,
                 )
                 return None
 
@@ -1219,11 +1228,11 @@ class FilmTrackerApp:
             try:
                 shot_date = ValidationUtils.parse_optional_date(shot_date_raw)
             except ValueError:
-                messagebox.showerror("Validation Error", "Shot date must be in YYYY-MM-DD format.")
+                messagebox.showerror("Validation Error", "Shot date must be in YYYY-MM-DD format.", parent=self.root)
                 return None
 
         if status_raw not in self.STATUS_VALUES:
-            messagebox.showerror("Validation Error", "Invalid shot status.")
+            messagebox.showerror("Validation Error", "Invalid shot status.", parent=self.root)
             return None
 
         notes = notes_raw if notes_raw else None
@@ -1234,7 +1243,7 @@ class FilmTrackerApp:
 
     def _save_shot(self, save_and_next: bool = False) -> None:
         if self.selected_collection_id is None:
-            messagebox.showinfo("Select Collection", "Select a collection before saving a shot.")
+            messagebox.showinfo("Select Collection", "Select a collection before saving a shot.", parent=self.root)
             return
 
         validated = self._validate_shot_fields()
@@ -1267,7 +1276,7 @@ class FilmTrackerApp:
                 )
         except Exception as exc:
             # Surface unique frame constraint collisions and other DB errors clearly.
-            messagebox.showerror("Database Error", f"Could not save shot.\n\n{exc}")
+            messagebox.showerror("Database Error", f"Could not save shot.\n\n{exc}", parent=self.root)
             return
 
         self.selected_shot_id = None
@@ -1293,19 +1302,19 @@ class FilmTrackerApp:
     def _apply_status_to_selected(self) -> None:
         selection = self.shot_tree.selection()
         if not selection:
-            messagebox.showinfo("Select Shots", "Select one or more shots to update status.")
+            messagebox.showinfo("Select Shots", "Select one or more shots to update status.", parent=self.root)
             return
 
         status = self.bulk_status_var.get().strip()
         if status not in self.STATUS_VALUES:
-            messagebox.showerror("Validation Error", "Invalid bulk status.")
+            messagebox.showerror("Validation Error", "Invalid bulk status.", parent=self.root)
             return
 
         try:
             shot_ids = [int(shot_id) for shot_id in selection]
             self.db.update_shot_status_many(shot_ids, status)
         except Exception as exc:
-            messagebox.showerror("Database Error", f"Could not update statuses.\n\n{exc}")
+            messagebox.showerror("Database Error", f"Could not update statuses.\n\n{exc}", parent=self.root)
             return
 
         self.selected_shot_id = None
@@ -1315,17 +1324,18 @@ class FilmTrackerApp:
     def _apply_status_to_visible(self) -> None:
         visible_ids = self.shot_tree.get_children()
         if not visible_ids:
-            messagebox.showinfo("No Shots", "There are no visible shots to update.")
+            messagebox.showinfo("No Shots", "There are no visible shots to update.", parent=self.root)
             return
 
         status = self.bulk_status_var.get().strip()
         if status not in self.STATUS_VALUES:
-            messagebox.showerror("Validation Error", "Invalid bulk status.")
+            messagebox.showerror("Validation Error", "Invalid bulk status.", parent=self.root)
             return
 
         confirm = messagebox.askyesno(
             "Confirm Bulk Update",
             f"Mark all {len(visible_ids)} visible shot(s) as '{status}'?",
+            parent=self.root,
         )
         if not confirm:
             return
@@ -1334,7 +1344,7 @@ class FilmTrackerApp:
             shot_ids = [int(shot_id) for shot_id in visible_ids]
             self.db.update_shot_status_many(shot_ids, status)
         except Exception as exc:
-            messagebox.showerror("Database Error", f"Could not update statuses.\n\n{exc}")
+            messagebox.showerror("Database Error", f"Could not update statuses.\n\n{exc}", parent=self.root)
             return
 
         self.selected_shot_id = None
@@ -1343,17 +1353,17 @@ class FilmTrackerApp:
 
     def _delete_shot(self) -> None:
         if self.selected_shot_id is None:
-            messagebox.showinfo("Select Shot", "Select a shot to delete.")
+            messagebox.showinfo("Select Shot", "Select a shot to delete.", parent=self.root)
             return
 
-        confirm = messagebox.askyesno("Delete Shot", "Delete the selected shot?")
+        confirm = messagebox.askyesno("Delete Shot", "Delete the selected shot?", parent=self.root)
         if not confirm:
             return
 
         try:
             self.db.delete_shot(self.selected_shot_id)
         except Exception as exc:
-            messagebox.showerror("Database Error", f"Could not delete shot.\n\n{exc}")
+            messagebox.showerror("Database Error", f"Could not delete shot.\n\n{exc}", parent=self.root)
             return
 
         self.selected_shot_id = None
