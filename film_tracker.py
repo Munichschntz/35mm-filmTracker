@@ -312,10 +312,16 @@ class FilmTrackerApp:
         self._build_menu()
 
         self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=0)
+        self.root.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(self.root, padding=(12, 12, 12, 0))
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
+        ttk.Button(header, text="Settings", command=self._open_preferences_window).grid(row=0, column=1, sticky="e")
 
         container = ttk.Frame(self.root, padding=12)
-        container.grid(row=0, column=0, sticky="nsew")
+        container.grid(row=1, column=0, sticky="nsew")
         container.columnconfigure(0, weight=1)
         container.columnconfigure(1, weight=4)
         container.rowconfigure(0, weight=1)
@@ -375,21 +381,13 @@ class FilmTrackerApp:
         value = "" if self.selected_collection_id is None else str(self.selected_collection_id)
         self.preferences["last_selected_collection_id"] = value
         self.db.set_preference("last_selected_collection_id", value)
-    def _manage_camera_presets(self, var: tk.StringVar) -> None:
-        current_list = self._get_preset_list("camera_presets")
+    def _manage_camera_presets(self, current_list: list[str]) -> list[str] | None:
         dialog = CameraLensManagerDialog(self.root, "Cameras", current_list)
-        result = dialog.show()
-        if result is not None:
-            self._set_preset_list("camera_presets", result)
-            var.set(", ".join(result))
+        return dialog.show()
 
-    def _manage_lens_presets(self, var: tk.StringVar) -> None:
-        current_list = self._get_preset_list("lens_presets")
+    def _manage_lens_presets(self, current_list: list[str]) -> list[str] | None:
         dialog = CameraLensManagerDialog(self.root, "Lenses", current_list)
-        result = dialog.show()
-        if result is not None:
-            self._set_preset_list("lens_presets", result)
-            var.set(", ".join(result))
+        return dialog.show()
 
 
     def _build_collection_panel(self, parent: ttk.Frame) -> None:
@@ -601,8 +599,33 @@ class FilmTrackerApp:
         clear_notes_var = tk.BooleanVar(value=self._preference_bool("save_next_clear_notes"))
         ctrl_enter_var = tk.BooleanVar(value=self._preference_bool("enable_ctrl_enter_save_next"))
         show_metadata_var = tk.BooleanVar(value=self._preference_bool("show_collection_metadata_header"))
-        camera_presets_var = tk.StringVar(value=", ".join(self._get_preset_list("camera_presets")))
-        lens_presets_var = tk.StringVar(value=", ".join(self._get_preset_list("lens_presets")))
+        camera_presets = self._get_preset_list("camera_presets")
+        lens_presets = self._get_preset_list("lens_presets")
+        camera_summary_var = tk.StringVar()
+        lens_summary_var = tk.StringVar()
+
+        def _preset_summary(values: list[str]) -> str:
+            return ", ".join(values) if values else "No presets saved."
+
+        def _refresh_preset_summaries() -> None:
+            camera_summary_var.set(_preset_summary(camera_presets))
+            lens_summary_var.set(_preset_summary(lens_presets))
+
+        def _open_camera_manager() -> None:
+            nonlocal camera_presets
+            result = self._manage_camera_presets(camera_presets)
+            if result is not None:
+                camera_presets = [value.strip() for value in result if value.strip()]
+                _refresh_preset_summaries()
+
+        def _open_lens_manager() -> None:
+            nonlocal lens_presets
+            result = self._manage_lens_presets(lens_presets)
+            if result is not None:
+                lens_presets = [value.strip() for value in result if value.strip()]
+                _refresh_preset_summaries()
+
+        _refresh_preset_summaries()
 
         ttk.Label(general_tab, text="Default shot status for new entries").grid(row=0, column=0, sticky="w")
         ttk.Combobox(
@@ -654,28 +677,32 @@ class FilmTrackerApp:
             metadata_tab,
             text="Metadata helps identify film stock, camera, and lens context while reviewing shots.",
         ).grid(row=1, column=0, sticky="w")
+        ttk.Label(
+            metadata_tab,
+            text="Use Manage to add or remove list entries. These presets are reused in collection metadata dialogs.",
+        ).grid(row=2, column=0, sticky="w", pady=(6, 0))
 
-        ttk.Label(metadata_tab, text="Camera presets").grid(row=2, column=0, sticky="w", pady=(12, 0))
+        ttk.Label(metadata_tab, text="Camera presets").grid(row=3, column=0, sticky="w", pady=(12, 0))
         camera_preset_frame = ttk.Frame(metadata_tab)
-        camera_preset_frame.grid(row=3, column=0, sticky="ew", pady=(4, 8))
+        camera_preset_frame.grid(row=4, column=0, sticky="ew", pady=(4, 8))
         camera_preset_frame.columnconfigure(0, weight=1)
-        ttk.Entry(camera_preset_frame, textvariable=camera_presets_var, width=40).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Label(camera_preset_frame, textvariable=camera_summary_var).grid(row=0, column=0, sticky="w", padx=(0, 4))
         ttk.Button(
             camera_preset_frame,
             text="Manage",
-            command=lambda: self._manage_camera_presets(camera_presets_var),
+            command=_open_camera_manager,
             width=10,
         ).grid(row=0, column=1, sticky="ew")
 
-        ttk.Label(metadata_tab, text="Lens presets").grid(row=4, column=0, sticky="w")
+        ttk.Label(metadata_tab, text="Lens presets").grid(row=5, column=0, sticky="w")
         lens_preset_frame = ttk.Frame(metadata_tab)
-        lens_preset_frame.grid(row=5, column=0, sticky="ew", pady=(4, 0))
+        lens_preset_frame.grid(row=6, column=0, sticky="ew", pady=(4, 0))
         lens_preset_frame.columnconfigure(0, weight=1)
-        ttk.Entry(lens_preset_frame, textvariable=lens_presets_var, width=40).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Label(lens_preset_frame, textvariable=lens_summary_var).grid(row=0, column=0, sticky="w", padx=(0, 4))
         ttk.Button(
             lens_preset_frame,
             text="Manage",
-            command=lambda: self._manage_lens_presets(lens_presets_var),
+            command=_open_lens_manager,
             width=10,
         ).grid(row=0, column=1, sticky="ew")
 
@@ -704,8 +731,6 @@ class FilmTrackerApp:
             self.preferences["save_next_clear_notes"] = "true" if clear_notes_var.get() else "false"
             self.preferences["enable_ctrl_enter_save_next"] = "true" if ctrl_enter_var.get() else "false"
             self.preferences["show_collection_metadata_header"] = "true" if show_metadata_var.get() else "false"
-            camera_presets = [part.strip() for part in camera_presets_var.get().split(",") if part.strip()]
-            lens_presets = [part.strip() for part in lens_presets_var.get().split(",") if part.strip()]
             self._set_preset_list("camera_presets", camera_presets)
             self._set_preset_list("lens_presets", lens_presets)
             self._save_preferences()
