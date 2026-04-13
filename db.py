@@ -71,6 +71,7 @@ class FilmDatabase:
         default_preferences = {
             "camera_presets": "",
             "lens_presets": "",
+            "collection_pane_width": "",
             "last_selected_collection_id": "",
         }
         for key, value in default_preferences.items():

@@ -309,6 +309,7 @@ class FilmTrackerApp:
         "save_next_clear_notes": "true",
         "enable_ctrl_enter_save_next": "true",
         "show_collection_metadata_header": "true",
+        "collection_pane_width": "",
         "camera_presets": "",
         "lens_presets": "",
         "last_selected_collection_id": "",
@@ -333,6 +334,8 @@ class FilmTrackerApp:
 
         self.collection_id_to_item: dict[int, str] = {}
         self.collection_id_to_label: dict[int, str] = {}
+        self.main_paned: ttk.PanedWindow | None = None
+        self._pane_save_after_id: str | None = None
         self._form_dirty = False
         self._loading_form = False
 
@@ -357,14 +360,15 @@ class FilmTrackerApp:
         header.columnconfigure(0, weight=1)
         ttk.Button(header, text="Settings", command=self._open_preferences_window).grid(row=0, column=1, sticky="e")
 
-        container = ttk.Frame(self.root, padding=12)
-        container.grid(row=1, column=0, sticky="nsew")
-        container.columnconfigure(0, weight=1)
-        container.columnconfigure(1, weight=4)
-        container.rowconfigure(0, weight=1)
+        container = ttk.PanedWindow(self.root, orient="horizontal")
+        container.grid(row=1, column=0, sticky="nsew", padx=12, pady=12)
+        self.main_paned = container
 
         self._build_collection_panel(container)
         self._build_shot_panel(container)
+        self.root.after_idle(self._restore_collection_pane_width)
+        container.bind("<B1-Motion>", self._on_pane_dragging)
+        container.bind("<ButtonRelease-1>", self._on_pane_drag_finished)
 
     def _build_menu(self) -> None:
         menubar = tk.Menu(self.root)
@@ -390,6 +394,7 @@ class FilmTrackerApp:
         input_font.configure(size=base_font.cget("size") + 1)
         self.input_font = input_font
 
+        style.configure("TButton", padding=(8, 4))
         style.configure("Large.TEntry", font=self.input_font, padding=(6, 6))
         style.configure("Large.TCombobox", font=self.input_font, padding=(6, 6))
 
@@ -432,9 +437,9 @@ class FilmTrackerApp:
         return dialog.show()
 
 
-    def _build_collection_panel(self, parent: ttk.Frame) -> None:
+    def _build_collection_panel(self, parent: ttk.PanedWindow) -> None:
         panel = ttk.LabelFrame(parent, text="Roll Collections", padding=10)
-        panel.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        parent.add(panel, weight=1)
         panel.columnconfigure(0, weight=1)
         panel.rowconfigure(0, weight=1)
 
@@ -464,9 +469,9 @@ class FilmTrackerApp:
         ttk.Button(buttons, text="Import", command=self._import_shots_csv).grid(row=1, column=0, columnspan=3, sticky="ew", padx=(0, 4), pady=(6, 0))
         ttk.Button(buttons, text="Export", command=self._export_shots_csv).grid(row=1, column=3, columnspan=3, sticky="ew", padx=(4, 0), pady=(6, 0))
 
-    def _build_shot_panel(self, parent: ttk.Frame) -> None:
+    def _build_shot_panel(self, parent: ttk.PanedWindow) -> None:
         panel = ttk.LabelFrame(parent, text="Shots", padding=10)
-        panel.grid(row=0, column=1, sticky="nsew")
+        parent.add(panel, weight=4)
         panel.columnconfigure(0, weight=1)
         panel.rowconfigure(1, weight=1)
 
@@ -682,6 +687,64 @@ class FilmTrackerApp:
         window.protocol("WM_DELETE_WINDOW", _close_dialog)
 
         self.root.wait_window(window)
+
+    def _restore_collection_pane_width(self) -> None:
+        if self.main_paned is None:
+            return
+
+        raw = self.preferences.get("collection_pane_width", "").strip()
+        if not raw.isdigit():
+            return
+
+        self.root.update_idletasks()
+        total_width = self.main_paned.winfo_width()
+        if total_width <= 0:
+            return
+
+        stored_width = int(raw)
+        min_left = 220
+        min_right = 420
+        max_left = max(min_left, total_width - min_right)
+        target = max(min_left, min(stored_width, max_left))
+
+        try:
+            self.main_paned.sashpos(0, target)
+        except tk.TclError:
+            return
+
+    def _on_pane_dragging(self, _event: tk.Event) -> None:
+        if self.main_paned is None:
+            return
+
+        if self._pane_save_after_id is not None:
+            self.root.after_cancel(self._pane_save_after_id)
+        self._pane_save_after_id = self.root.after(150, self._save_collection_pane_width)
+
+    def _on_pane_drag_finished(self, _event: tk.Event) -> None:
+        if self._pane_save_after_id is not None:
+            self.root.after_cancel(self._pane_save_after_id)
+            self._pane_save_after_id = None
+        self._save_collection_pane_width()
+
+    def _save_collection_pane_width(self) -> None:
+        self._pane_save_after_id = None
+        if self.main_paned is None:
+            return
+
+        try:
+            sash_position = int(self.main_paned.sashpos(0))
+        except (tk.TclError, ValueError):
+            return
+
+        if sash_position <= 0:
+            return
+
+        value = str(sash_position)
+        if self.preferences.get("collection_pane_width", "") == value:
+            return
+
+        self.preferences["collection_pane_width"] = value
+        self.db.set_preference("collection_pane_width", value)
 
     def _set_date_today(self) -> None:
         self.date_var.set(date.today().isoformat())
