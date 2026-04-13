@@ -37,5 +37,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [INFO] Starting film_tracker.py in activated .venv ...
-powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location '%~dp0'; . .\.venv\Scripts\Activate.ps1; python .\film_tracker.py"
+echo [INFO] Starting film_tracker.py ...
+.\.venv\Scripts\python.exe .\film_tracker.py
+exit /b %errorlevel%

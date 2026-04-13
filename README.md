@@ -84,9 +84,8 @@ Run `run.bat` from File Explorer or Command Prompt to:
 
 1. Create `.venv` automatically if it does not exist.
 2. Install/update dependencies from `requirements.txt` into `.venv`.
-3. Open PowerShell in the project folder with `.venv` activated.
-4. Start `film_tracker.py` automatically.
-5. Keep PowerShell open after the app exits.
+3. Start `film_tracker.py` with `.venv\\Scripts\\python.exe`.
+4. Exit the launcher process when the app closes.
 
 ```powershell
 run.bat
