@@ -34,6 +34,22 @@ class Roll:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    @staticmethod
+    def _parse_bool(value: object, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "y", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "n", "off", ""}:
+                return False
+        return default
+
     @classmethod
     def from_dict(cls, data: dict) -> "Roll":
         return cls(
@@ -48,7 +64,7 @@ class Roll:
             frames_shot=int(data.get("frames_shot", 0)),
             location=data.get("location"),
             lab=data.get("lab"),
-            scanned=bool(data.get("scanned", False)),
+            scanned=cls._parse_bool(data.get("scanned", False), default=False),
         )
 
 

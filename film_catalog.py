@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -49,12 +50,14 @@ class FilmStock:
                 "push processing. Higher ratings yield increased but atmospheric grain."
             )
         if self.is_push_pull_sensitive:
-            stops = abs(self.iso - (self.iso_native or self.iso))
+            iso_native = self.iso_native or self.iso
+            stops = abs(math.log2(self.iso / iso_native))
+            stop_text = f"{stops:.1f}" if not stops.is_integer() else str(int(stops))
             direction = "push" if self.iso > (self.iso_native or self.iso) else "pull"
             return (
                 f"This stock is rated at ISO {self.iso} but its native sensitivity is "
                 f"ISO {self.iso_native}. Consider {direction} processing and adjust "
-                f"exposure accordingly (~{stops} stop difference)."
+                f"exposure accordingly (~{stop_text} stop difference)."
             )
         return None
 

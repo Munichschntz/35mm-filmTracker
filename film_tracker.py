@@ -2122,6 +2122,8 @@ class RollTrackerWindow(BaseDialog):
         if roll_id is None:
             return
         lab = simpledialog.askstring("Lab", "Lab name (optional):", parent=self._win)
+        if lab is None:
+            return
         try:
             self._roll_log.set_developed(roll_id, lab=lab)
             self._refresh()
