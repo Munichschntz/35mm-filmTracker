@@ -13,7 +13,7 @@ from film_catalog import FilmCatalog, FilmStock
 from roll_log import Roll, RollLog
 
 
-def center_dialog_over_parent(window: tk.Toplevel, parent: tk.Tk, min_width: int, min_height: int) -> None:
+def center_dialog_over_parent(window: tk.Toplevel, parent: tk.Misc, min_width: int, min_height: int) -> None:
     window.update_idletasks()
     parent_x = parent.winfo_x()
     parent_y = parent.winfo_y()
@@ -24,6 +24,44 @@ def center_dialog_over_parent(window: tk.Toplevel, parent: tk.Tk, min_width: int
     pos_x = parent_x + (parent_width - dialog_width) // 2
     pos_y = parent_y + (parent_height - dialog_height) // 2
     window.geometry(f"{dialog_width}x{dialog_height}+{max(0, pos_x)}+{max(0, pos_y)}")
+
+
+class BaseDialog:
+    """Base for all modal Toplevel dialogs.
+
+    Subclasses create a window by calling ``self._init_window(...)`` which
+    handles Toplevel creation, transient binding, optional min-size, and
+    centering over the parent — so callers can never accidentally skip it.
+
+    Typical subclass pattern::
+
+        class MyDialog(BaseDialog):
+            def __init__(self, parent, ...):
+                self._init_window(parent, "Title", width=500, height=300)
+                self._build()
+                self._win.grab_set()
+    """
+
+    _win: tk.Toplevel  # set by _init_window; available to subclasses
+
+    def _init_window(
+        self,
+        parent: tk.Misc,
+        title: str,
+        width: int,
+        height: int,
+        *,
+        resizable: tuple[bool, bool] = (True, True),
+        min_width: int | None = None,
+        min_height: int | None = None,
+    ) -> None:
+        self._win = tb.Toplevel(parent)
+        self._win.title(title)
+        self._win.transient(parent)
+        self._win.resizable(*resizable)
+        if min_width is not None and min_height is not None:
+            self._win.minsize(min_width, min_height)
+        center_dialog_over_parent(self._win, parent, width, height)
 
 
 class ValidationUtils:
@@ -69,30 +107,22 @@ class ValidationUtils:
         return stripped if stripped else None
 
 
-class CameraLensManagerDialog:
+class CameraLensManagerDialog(BaseDialog):
     def __init__(
         self,
         parent: tk.Tk,
         title: str,
         items: list[str],
     ) -> None:
-        self.parent = parent
         self.result: list[str] | None = None
+        self._init_window(parent, title, 400, 350)
 
-        self.window = tb.Toplevel(parent)
-        self.window.title(title)
-        self.window.transient(parent)
-        self.window.grab_set()
-        self.window.resizable(True, True)
-        self.window.geometry("400x350")
-        center_dialog_over_parent(self.window, parent, 400, 350)
-
-        body = ttk.Frame(self.window, padding=12)
+        body = ttk.Frame(self._win, padding=12)
         body.grid(row=0, column=0, sticky="nsew")
         body.columnconfigure(0, weight=1)
         body.rowconfigure(1, weight=1)
-        self.window.columnconfigure(0, weight=1)
-        self.window.rowconfigure(0, weight=1)
+        self._win.columnconfigure(0, weight=1)
+        self._win.rowconfigure(0, weight=1)
 
         ttk.Label(body, text=f"Manage {title}").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
@@ -139,12 +169,13 @@ class CameraLensManagerDialog:
         ttk.Button(dialog_buttons, text="Cancel", command=self._cancel).grid(row=0, column=0, padx=(0, 8))
         ttk.Button(dialog_buttons, text="OK", command=self._ok).grid(row=0, column=1)
 
-        self.window.bind("<Return>", self._on_return)
-        self.window.bind("<Escape>", self._on_escape)
+        self._win.bind("<Return>", self._on_return)
+        self._win.bind("<Escape>", self._on_escape)
+        self._win.grab_set()
 
     def _on_return(self, _event: tk.Event) -> None:
         # Only add if we're in the entry field, don't save on return
-        if self.window.focus_get() == self.new_item_entry:
+        if self._win.focus_get() == self.new_item_entry:
             self._add_item()
 
     def _on_escape(self, _event: tk.Event) -> None:
@@ -153,13 +184,13 @@ class CameraLensManagerDialog:
     def _add_item(self) -> None:
         new_item = self.new_item_var.get().strip()
         if not new_item:
-            messagebox.showwarning("Empty Item", "Please enter a name before adding.", parent=self.window)
+            messagebox.showwarning("Empty Item", "Please enter a name before adding.", parent=self._win)
             return
 
         # Check for duplicates
         existing_items = self.listbox.get(0, tk.END)
         if new_item in existing_items:
-            messagebox.showwarning("Duplicate", f"'{new_item}' already exists.", parent=self.window)
+            messagebox.showwarning("Duplicate", f"'{new_item}' already exists.", parent=self._win)
             return
 
         self.listbox.insert(tk.END, new_item)
@@ -169,24 +200,24 @@ class CameraLensManagerDialog:
     def _remove_item(self) -> None:
         selection = self.listbox.curselection()
         if not selection:
-            messagebox.showinfo("No Selection", "Please select an item to remove.", parent=self.window)
+            messagebox.showinfo("No Selection", "Please select an item to remove.", parent=self._win)
             return
         self.listbox.delete(selection[0])
 
     def _cancel(self) -> None:
         self.result = None
-        self.window.destroy()
+        self._win.destroy()
 
     def _ok(self) -> None:
         self.result = list(self.listbox.get(0, tk.END))
-        self.window.destroy()
+        self._win.destroy()
 
     def show(self) -> list[str] | None:
-        self.parent.wait_window(self.window)
+        self._win.wait_window(self._win)
         return self.result
 
 
-class CollectionMetadataDialog:
+class CollectionMetadataDialog(BaseDialog):
     def __init__(
         self,
         parent: tk.Tk,
@@ -195,17 +226,10 @@ class CollectionMetadataDialog:
         camera_presets: list[str],
         lens_presets: list[str],
     ) -> None:
-        self.parent = parent
         self.result: dict[str, str] | None = None
+        self._init_window(parent, title, 560, 320, resizable=(False, False))
 
-        self.window = tb.Toplevel(parent)
-        self.window.title(title)
-        self.window.transient(parent)
-        self.window.grab_set()
-        self.window.resizable(False, False)
-        center_dialog_over_parent(self.window, parent, 560, 320)
-
-        body = ttk.Frame(self.window, padding=12)
+        body = ttk.Frame(self._win, padding=12)
         body.grid(row=0, column=0, sticky="nsew")
 
         labels = (
@@ -242,8 +266,9 @@ class CollectionMetadataDialog:
         ttk.Button(buttons, text="Cancel", command=self._cancel).grid(row=0, column=0, padx=(0, 8))
         ttk.Button(buttons, text="Save", command=self._save).grid(row=0, column=1)
 
-        self.window.bind("<Return>", self._on_return)
-        self.window.bind("<Escape>", self._on_escape)
+        self._win.bind("<Return>", self._on_return)
+        self._win.bind("<Escape>", self._on_escape)
+        self._win.grab_set()
 
     def _on_return(self, _event: tk.Event) -> None:
         self._save()
@@ -253,12 +278,12 @@ class CollectionMetadataDialog:
 
     def _cancel(self) -> None:
         self.result = None
-        self.window.destroy()
+        self._win.destroy()
 
     def _save(self) -> None:
         name = self.vars["name"].get().strip()
         if not name:
-            messagebox.showerror("Validation Error", "Collection name cannot be empty.", parent=self.window)
+            messagebox.showerror("Validation Error", "Collection name cannot be empty.", parent=self._win)
             return
 
         iso_raw = self.vars["iso"].get().strip()
@@ -266,7 +291,7 @@ class CollectionMetadataDialog:
             try:
                 ValidationUtils.parse_optional_iso(iso_raw)
             except ValueError as exc:
-                messagebox.showerror("Validation Error", str(exc), parent=self.window)
+                messagebox.showerror("Validation Error", str(exc), parent=self._win)
                 return
 
         capacity_raw = self.vars["capacity"].get().strip()
@@ -276,7 +301,7 @@ class CollectionMetadataDialog:
                 if cap_int <= 0:
                     raise ValueError("Roll capacity must be a positive number.")
             except ValueError as exc:
-                messagebox.showerror("Validation Error", str(exc), parent=self.window)
+                messagebox.showerror("Validation Error", str(exc), parent=self._win)
                 return
 
         self.result = {
@@ -289,10 +314,10 @@ class CollectionMetadataDialog:
             "lab": self.vars["lab"].get().strip(),
             "push_pull": self.vars["push_pull"].get().strip(),
         }
-        self.window.destroy()
+        self._win.destroy()
 
     def show(self) -> dict[str, str] | None:
-        self.parent.wait_window(self.window)
+        self._win.wait_window(self._win)
         return self.result
 
 
@@ -1666,14 +1691,10 @@ _PROCESS_LABELS: dict[str, str] = {
 }
 
 
-class FilmCatalogWindow:
+class FilmCatalogWindow(BaseDialog):
     def __init__(self, parent: tk.Tk, catalog: FilmCatalog) -> None:
         self._catalog = catalog
-        self._win = tb.Toplevel(parent)
-        self._win.title("Film Catalog")
-        self._win.transient(parent)
-        self._win.geometry("860x580")
-        self._win.minsize(720, 480)
+        self._init_window(parent, "Film Catalog", 860, 580, min_width=720, min_height=480)
 
         self._var_iso_min = tk.StringVar()
         self._var_iso_max = tk.StringVar()
@@ -1850,7 +1871,7 @@ class FilmCatalogWindow:
 # Recommendation Dialog
 # ---------------------------------------------------------------------------
 
-class RecommendDialog:
+class RecommendDialog(BaseDialog):
     _SCENARIO_LABELS = [
         ("portrait", "Portrait"),
         ("low_light", "Low Light"),
@@ -1861,11 +1882,7 @@ class RecommendDialog:
 
     def __init__(self, parent: tk.Toplevel, catalog: FilmCatalog) -> None:
         self._catalog = catalog
-        self._win = tb.Toplevel(parent)
-        self._win.title("Film Recommendations")
-        self._win.transient(parent)
-        self._win.geometry("540x440")
-        self._win.resizable(True, True)
+        self._init_window(parent, "Film Recommendations", 540, 440)
         self._var_scenario = tk.StringVar(value="portrait")
         self._build()
         self._run()
@@ -1927,15 +1944,11 @@ _STATUS_COLORS: dict[str, str] = {
 }
 
 
-class RollTrackerWindow:
+class RollTrackerWindow(BaseDialog):
     def __init__(self, parent: tk.Tk, catalog: FilmCatalog, roll_log: RollLog) -> None:
         self._catalog = catalog
         self._roll_log = roll_log
-        self._win = tb.Toplevel(parent)
-        self._win.title("Roll Tracker")
-        self._win.transient(parent)
-        self._win.geometry("820x520")
-        self._win.minsize(700, 420)
+        self._init_window(parent, "Roll Tracker", 820, 520, min_width=700, min_height=420)
         self._selected_roll_id: str | None = None
         self._build()
         self._refresh()
@@ -2102,7 +2115,7 @@ class RollTrackerWindow:
 # New Roll Dialog
 # ---------------------------------------------------------------------------
 
-class NewRollDialog:
+class NewRollDialog(BaseDialog):
     def __init__(
         self,
         parent: tk.Toplevel,
@@ -2114,12 +2127,7 @@ class NewRollDialog:
         self._roll_log = roll_log
         self._on_created = on_created
         self._all_films = catalog.filter()
-
-        self._win = tb.Toplevel(parent)
-        self._win.title("New Roll")
-        self._win.transient(parent)
-        self._win.geometry("420x400")
-        self._win.resizable(False, True)
+        self._init_window(parent, "New Roll", 420, 400, resizable=(False, True))
 
         self._var_search = tk.StringVar()
         self._var_camera = tk.StringVar()
