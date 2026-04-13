@@ -576,6 +576,18 @@ class FilmTrackerApp:
         window.grab_set()
         window.minsize(560, 360)
 
+        # Center the preferences dialog over the main application window.
+        window.update_idletasks()
+        root_x = self.root.winfo_x()
+        root_y = self.root.winfo_y()
+        root_width = self.root.winfo_width()
+        root_height = self.root.winfo_height()
+        dialog_width = max(560, window.winfo_reqwidth())
+        dialog_height = max(360, window.winfo_reqheight())
+        pos_x = root_x + (root_width - dialog_width) // 2
+        pos_y = root_y + (root_height - dialog_height) // 2
+        window.geometry(f"{dialog_width}x{dialog_height}+{max(0, pos_x)}+{max(0, pos_y)}")
+
         content = ttk.Frame(window, padding=12)
         content.grid(row=0, column=0, sticky="nsew")
         content.columnconfigure(0, weight=1)
