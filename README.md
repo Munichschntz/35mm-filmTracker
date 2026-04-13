@@ -31,7 +31,7 @@ It helps you track exposure details while shooting, then follow each frame throu
 - Bulk status update actions (`Mark Selected`, `Mark Visible`)
 - Quick entry support with `Save + Next` and keyboard shortcut `Ctrl+Enter`
 - Preferences window with tabbed settings for defaults, quick entry, metadata display, and workflow tips
-- Visible `Settings` button in the main window (plus `App` -> `Preferences` menu access)
+- Preferences available from `App` -> `Preferences`
 - Camera and lens preset management via list dialogs (`Manage` buttons in Preferences -> Metadata)
 - Preset changes are staged in Preferences and saved only when you click `Save`
 - ISO date entry field for shot date (`YYYY-MM-DD`)
@@ -131,7 +131,7 @@ Frame numbers are unique within the same collection when provided.
 7. Use the status filter and bulk status controls above the shot form as needed.
 8. Select an existing shot to edit, then click `Save Shot`.
 9. Use `Delete Shot` or `Delete` (collection) to remove data.
-10. Open Preferences from the `Settings` button (or `App` -> `Preferences`) to customize default status/filter and quick-entry behavior.
+10. Open Preferences from `App` -> `Preferences` to customize default status/filter and quick-entry behavior.
 11. Configure camera/lens presets from Preferences -> `Metadata` -> `Manage` buttons (list dialogs) and reuse them in add/edit metadata dialogs.
 12. Use `Export` in the collections panel to save shots as CSV.
 13. Use `Import` in the collections panel to bulk insert shots from CSV.

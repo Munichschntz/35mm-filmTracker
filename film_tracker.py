@@ -593,16 +593,10 @@ class FilmTrackerApp:
         self._build_menu()
 
         self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=0)
-        self.root.rowconfigure(1, weight=1)
-
-        header = ttk.Frame(self.root, padding=(12, 12, 12, 0))
-        header.grid(row=0, column=0, sticky="ew")
-        header.columnconfigure(0, weight=1)
-        ttk.Button(header, text="Settings", command=self._open_preferences_window).grid(row=0, column=1, sticky="e")
+        self.root.rowconfigure(0, weight=1)
 
         container = ttk.PanedWindow(self.root, orient="horizontal")
-        container.grid(row=1, column=0, sticky="nsew", padx=12, pady=12)
+        container.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         self.main_paned = container
 
         self._build_collection_panel(container)
