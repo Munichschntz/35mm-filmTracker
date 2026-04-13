@@ -295,6 +295,7 @@ class CollectionMetadataDialog:
 
 class FilmTrackerApp:
     STATUS_VALUES = ("shot", "developed", "scanned", "edited", "printed")
+    DEFAULT_COLLECTION_PANE_WIDTH = 340
     SHUTTER_PRESETS = (
         "1/4000", "1/2000", "1/1000", "1/500", "1/250", "1/125",
         "1/60", "1/30", "1/15", "1/8", "1/4", "1/2", "1s", "2s", "4s", "B",
@@ -693,15 +694,13 @@ class FilmTrackerApp:
             return
 
         raw = self.preferences.get("collection_pane_width", "").strip()
-        if not raw.isdigit():
-            return
+        stored_width = int(raw) if raw.isdigit() else self.DEFAULT_COLLECTION_PANE_WIDTH
 
         self.root.update_idletasks()
         total_width = self.main_paned.winfo_width()
         if total_width <= 0:
             return
 
-        stored_width = int(raw)
         min_left = 220
         min_right = 420
         max_left = max(min_left, total_width - min_right)
