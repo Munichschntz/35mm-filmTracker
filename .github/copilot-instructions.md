@@ -1,68 +1,34 @@
 # Project Guidelines: 35mm Film Shot Tracker
 
+Use this file for project-wide rules only. For feature usage and UI walkthroughs, see README.md. For manual QA, see .github/manual-smoke-test.instructions.md.
+
 ## Architecture
 
-A **Tkinter desktop application** for tracking analog film shots with a clean separation of concerns:
+Tkinter desktop app with clear layer boundaries:
 
-- **`db.py`** — `FilmDatabase` class handles all persistence (SQLite CRUD, schema migrations, preferences)
-- **`film_tracker.py`** — UI layer with `FilmTrackerApp` (main window), dialogs, and event handlers
-- **`ValidationUtils`** — Static utility class for input validation (ISO, frame numbers, dates, text normalization)
+- `db.py`: `FilmDatabase` owns SQLite schema creation, CRUD, and preference storage.
+- `film_tracker.py`: `FilmTrackerApp`, dialogs, and event handlers.
+- `film_catalog.py`: film stock reference/catalog utilities loaded from JSON.
+- `roll_log.py`: roll lifecycle tracking with JSON persistence.
 
-### Key Design Patterns
+Design patterns to preserve:
 
-1. **Database Connectivity**
-   - Context managers (`with self._connect()`) ensure connections are committed/rolled back
-   - Parameterized queries prevent SQL injection
-   - `sqlite3.Row` objects returned to UI for easy dict-like access
-
-2. **Schema Migrations**
-   - Version-based system using `PRAGMA user_version`
-   - Sequential if-blocks in `_initialize()` (v1→v5)
-   - Idempotent operations ensure safe re-runs
-
-3. **Input Validation**
-   - `ValidationUtils` provides static methods for optional fields: `parse_optional_iso()`, `parse_optional_frame()`, `parse_optional_date()`, `normalize_optional_text()`
-   - Used in form submission and CSV import to ensure consistency
-   - Raises `ValueError` with user-friendly messages
-
-4. **Preferences as Key-Value Store**
-   - Stored in SQLite preferences table
-   - Retrieved as strings and dynamically parsed (e.g., pipe-delimited lists for presets)
-   - Defaults fallback for missing keys
-
-5. **Modal Dialogs**
-   - Use `CollectionMetadataDialog` pattern: create, call `.show()`, handle result
-   - Always `transient()` and `grab_set()` to block parent
+- Use context-managed DB connections (`with self._connect()`).
+- Keep SQL parameterized (`?` placeholders).
+- Keep validation centralized in `ValidationUtils` for UI and CSV paths.
+- Keep dialogs modal (`transient()` + `grab_set()`) and use `.show()` flow.
 
 ## Code Style
 
-- **Type hints** required for all function signatures (Python 3.10+)
-- **Context managers** for resource cleanup (DB connections, file I/O)
-- **Static utility methods** for reusable logic
-- **Parameterized queries** (`?` placeholders) for all SQL
-- **Enum-like tuples** for constants (e.g., `STATUS_VALUES`)
-- **Null-safe operations** via `normalize_optional_*()` helpers
+- Python 3.10+ type hints on function signatures.
+- Small, focused helpers for parsing/normalizing optional values.
+- Avoid duplicated logic across UI and DB layers unless both paths require it.
+- Preserve existing naming and status constants (`STATUS_VALUES`).
 
-Example:
-```python
-@staticmethod
-def parse_optional_iso(value: str | None) -> int | None:
-    if value is None:
-        return None
-    stripped = value.strip()
-    if not stripped:
-        return None
-    parsed = int(stripped)
-    if parsed <= 0:
-        raise ValueError("ISO must be a positive number.")
-    return parsed
-```
+## Build and Verify
 
-## Build and Test
+Run locally:
 
-### Run Locally
-
-**Linux/macOS:**
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -70,71 +36,57 @@ pip install -r requirements.txt
 python film_tracker.py
 ```
 
-**Windows (PowerShell):**
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python film_tracker.py
+Quick syntax sanity check before handing off larger changes:
+
+```bash
+python -m compileall db.py film_tracker.py film_catalog.py roll_log.py
 ```
 
-Or use `run.bat` from File Explorer to automate the above.
+Testing status:
 
-### Dependencies
-
-- **ttkbootstrap** — Theming for Tkinter
-- **tkinter, sqlite3** — Standard library
-
-### Testing
-
-⚠️ **No automated tests exist.** Manual testing required for:
-- CSV import/export functionality
-- Database schema migrations (when schema changes)
-- Status filter and bulk operations
-- Dialog form validation
-
-Use the dedicated manual checklist in `.github/manual-smoke-test.instructions.md` for a full end-to-end smoke pass.
-
-Consider adding unit tests for `ValidationUtils` and `FilmDatabase` for confidence in future refactoring.
+- No automated tests currently exist.
+- Run the manual checklist in .github/manual-smoke-test.instructions.md after UI, DB, CSV, or preferences changes.
 
 ## Conventions
 
-### Database Migrations
+Schema and migrations:
 
-When modifying the schema:
-1. Increment `LATEST_SCHEMA_VERSION` in `FilmDatabase`
-2. Add a new `_migrate_to_vX()` method with `CREATE TABLE`, `ALTER TABLE`, etc.
-3. Chain it in `_initialize()` with `if current_version < X:` block
+- Current schema is created idempotently in `FilmDatabase._create_schema()`.
+- `LATEST_SCHEMA_VERSION` currently tracks schema version via `PRAGMA user_version`.
+- If introducing future migrations, keep upgrade steps explicit and safe to re-run.
 
-### Validation
+Validation and normalization:
 
-- Always validate user input before database operations
-- Use `ValidationUtils` methods; don't duplicate validation logic
-- Catch `ValueError` and display in modal dialogs (not console)
+- Validate form and CSV inputs before DB calls.
+- Raise `ValueError` with user-facing messages, then surface via dialogs.
+- Keep `ValidationUtils.normalize_optional_text()` and `FilmDatabase.normalize_optional_text()` behavior in sync.
 
-### UI State Management
+Preferences:
 
-- Track selected collection/shot IDs in instance variables
-- Reload table views after any database mutation (create/update/delete)
-- Use `_load_shots_for_selected_collection()` pattern for consistency
+- Preferences are string values in SQLite key-value storage.
+- Boolean preferences are serialized as `"true"` / `"false"` strings.
+- Camera/lens preset lists are pipe-delimited strings.
+
+UI state:
+
+- Preserve selected collection/shot IDs across UI refreshes.
+- Reload table/list views after any mutation.
+- Keep `_load_shots_for_selected_collection()` as the standard refresh path.
+
+## Bug and Typo Review Focus
+
+When asked to look for bugs or typos, prioritize:
+
+- Behavioral regressions in save/edit/delete/import/export flows.
+- Validation mismatches between form input, CSV import, and DB constraints.
+- Typos in preference keys, status values, SQL column names, and JSON keys.
+- User-facing text issues in dialogs, error messages, and labels.
+
+Report findings with file paths and concrete impact first, then suggest minimal fixes.
 
 ## Known Gotchas
 
-1. **Dual Normalization** — Text normalization happens in *both* `FilmDatabase` and `ValidationUtils`. If you change one, update the other to stay in sync.
-
-2. **No Logging** — Errors are shown as messagebox dialogs. Debugging server/database issues requires adding print statements or logging.
-
-3. **No Test Suite** — CSV import, migrations, and bulk status updates are only tested manually. High refactoring risk.
-
-4. **Preference Defaults on Startup** — New preference keys added in code default to hardcoded defaults if missing in DB until manually saved.
-
-5. **Status Filter Not Persisted** — Current filter resets to the default status on app restart (not the last selected filter).
-
-6. **Race Condition in Frame Uniqueness** — Frame number uniqueness is checked before insert but not wrapped in a transaction. In single-user Tkinter app this is unlikely but theoretically possible.
-
-## Recommended Next Steps
-
-- Add `tests/test_validation.py` and `tests/test_db.py` for regression detection
-- Add basic logging (file or stderr) for debugging
-- Extract business logic (shot filtering, status workflows) into a service layer
-- Consider JSON/pickle for preferences instead of manual pipe-delimited parsing
+- No automated tests; manual smoke checks are required.
+- Text normalization logic exists in both UI and DB code paths.
+- Changing the status filter immediately updates the stored `default_status_filter` preference.
+- Errors are primarily surfaced via message boxes (minimal logging).
