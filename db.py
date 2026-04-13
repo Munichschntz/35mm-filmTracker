@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 
 class FilmDatabase:
-    LATEST_SCHEMA_VERSION = 5
+    LATEST_SCHEMA_VERSION = 6
 
     def __init__(self, db_path: str = "data/film_tracker.db") -> None:
         self.db_path = Path(db_path)
@@ -44,6 +44,11 @@ class FilmDatabase:
             if current_version < 5:
                 self._migrate_to_v5(conn)
                 self._set_schema_version(conn, 5)
+                current_version = 5
+
+            if current_version < 6:
+                self._migrate_to_v6(conn)
+                self._set_schema_version(conn, 6)
 
     @staticmethod
     def _create_base_schema(conn: sqlite3.Connection) -> None:
@@ -137,14 +142,31 @@ class FilmDatabase:
                 (key, value),
             )
 
+    @staticmethod
+    def _migrate_to_v6(conn: sqlite3.Connection) -> None:
+        cursor = conn.execute("PRAGMA table_info(collections)")
+        if not any(row["name"] == "capacity" for row in cursor.fetchall()):
+            conn.execute("ALTER TABLE collections ADD COLUMN capacity INTEGER")
+
     # Collection operations
     def list_collections(self) -> list[sqlite3.Row]:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, name, film_stock, iso, camera, lens, lab, push_pull, created_at
-                FROM collections
-                ORDER BY name COLLATE NOCASE, id
+                SELECT
+                    c.id,
+                    c.name,
+                    c.film_stock,
+                    c.iso,
+                    c.camera,
+                    c.lens,
+                    c.lab,
+                    c.push_pull,
+                    c.capacity,
+                    c.created_at,
+                    (SELECT COUNT(*) FROM shots WHERE collection_id = c.id) AS shot_count
+                FROM collections c
+                ORDER BY c.name COLLATE NOCASE, c.id
                 """
             )
             return cursor.fetchall()
@@ -158,12 +180,13 @@ class FilmDatabase:
         lens: Optional[str] = None,
         lab: Optional[str] = None,
         push_pull: Optional[str] = None,
+        capacity: Optional[int] = None,
     ) -> int:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO collections (name, film_stock, iso, camera, lens, lab, push_pull)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO collections (name, film_stock, iso, camera, lens, lab, push_pull, capacity)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name.strip(),
@@ -173,6 +196,7 @@ class FilmDatabase:
                     self.normalize_optional_text(lens),
                     self.normalize_optional_text(lab),
                     self.normalize_optional_text(push_pull),
+                    capacity,
                 ),
             )
             return int(cursor.lastrowid)
@@ -181,7 +205,7 @@ class FilmDatabase:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, name, film_stock, iso, camera, lens, lab, push_pull, created_at
+                SELECT id, name, film_stock, iso, camera, lens, lab, push_pull, capacity, created_at
                 FROM collections
                 WHERE id = ?
                 """,
@@ -206,6 +230,7 @@ class FilmDatabase:
         lens: Optional[str],
         lab: Optional[str],
         push_pull: Optional[str],
+        capacity: Optional[int] = None,
     ) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -217,7 +242,8 @@ class FilmDatabase:
                     camera = ?,
                     lens = ?,
                     lab = ?,
-                    push_pull = ?
+                    push_pull = ?,
+                    capacity = ?
                 WHERE id = ?
                 """,
                 (
@@ -228,6 +254,7 @@ class FilmDatabase:
                     self.normalize_optional_text(lens),
                     self.normalize_optional_text(lab),
                     self.normalize_optional_text(push_pull),
+                    capacity,
                     collection_id,
                 ),
             )

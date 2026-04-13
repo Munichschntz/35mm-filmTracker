@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import tkinter as tk
 import tkinter.font as tkfont
-from datetime import datetime
+from datetime import date, datetime
 from tkinter import filedialog, messagebox, ttk
 import ttkbootstrap as tb
 
@@ -209,6 +209,7 @@ class CollectionMetadataDialog:
             ("Collection Name *", "name"),
             ("Film Stock", "film_stock"),
             ("ISO", "iso"),
+            ("Roll Capacity", "capacity"),
             ("Camera", "camera"),
             ("Lens", "lens"),
             ("Lab", "lab"),
@@ -230,7 +231,7 @@ class CollectionMetadataDialog:
             if key == "name":
                 entry.focus_set()
 
-        help_text = "Optional fields can be left blank. ISO must be a positive whole number."
+        help_text = "Optional fields can be left blank. ISO and Roll Capacity must be positive whole numbers."
         ttk.Label(body, text=help_text).grid(row=len(labels), column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         buttons = ttk.Frame(body)
@@ -265,10 +266,21 @@ class CollectionMetadataDialog:
                 messagebox.showerror("Validation Error", str(exc), parent=self.window)
                 return
 
+        capacity_raw = self.vars["capacity"].get().strip()
+        if capacity_raw:
+            try:
+                cap_int = int(capacity_raw)
+                if cap_int <= 0:
+                    raise ValueError("Roll capacity must be a positive number.")
+            except ValueError as exc:
+                messagebox.showerror("Validation Error", str(exc), parent=self.window)
+                return
+
         self.result = {
             "name": name,
             "film_stock": self.vars["film_stock"].get().strip(),
             "iso": iso_raw,
+            "capacity": capacity_raw,
             "camera": self.vars["camera"].get().strip(),
             "lens": self.vars["lens"].get().strip(),
             "lab": self.vars["lab"].get().strip(),
@@ -283,6 +295,14 @@ class CollectionMetadataDialog:
 
 class FilmTrackerApp:
     STATUS_VALUES = ("shot", "developed", "scanned", "edited", "printed")
+    SHUTTER_PRESETS = (
+        "1/4000", "1/2000", "1/1000", "1/500", "1/250", "1/125",
+        "1/60", "1/30", "1/15", "1/8", "1/4", "1/2", "1s", "2s", "4s", "B",
+    )
+    FSTOP_PRESETS = (
+        "f/1.0", "f/1.2", "f/1.4", "f/1.8", "f/2", "f/2.8",
+        "f/3.5", "f/4", "f/5.6", "f/8", "f/11", "f/16", "f/22", "f/32",
+    )
     DEFAULT_PREFERENCES = {
         "default_shot_status": "shot",
         "default_status_filter": "all",
@@ -313,6 +333,8 @@ class FilmTrackerApp:
 
         self.collection_id_to_item: dict[int, str] = {}
         self.collection_id_to_label: dict[int, str] = {}
+        self._form_dirty = False
+        self._loading_form = False
 
         self._build_ui()
         self.root.bind("<Control-Return>", self._on_save_next_shortcut)
@@ -353,6 +375,11 @@ class FilmTrackerApp:
         app_menu.add_command(label="Quit", command=self.root.quit)
 
         menubar.add_cascade(label="App", menu=app_menu)
+
+        help_menu = tk.Menu(menubar, tearoff=False)
+        help_menu.add_command(label="Quick Tips", command=self._show_help_tips)
+        menubar.add_cascade(label="Help", menu=help_menu)
+
         self.root.config(menu=menubar)
 
     def _configure_styles(self) -> None:
@@ -416,6 +443,7 @@ class FilmTrackerApp:
         self.collection_list.column("label", anchor="w")
         self.collection_list.grid(row=0, column=0, sticky="nsew")
         self.collection_list.bind("<<TreeviewSelect>>", self._on_collection_selected)
+    self.collection_list.bind("<Double-1>", lambda _e: self._edit_collection())
 
         scrollbar = ttk.Scrollbar(panel, orient="vertical", command=self.collection_list.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
@@ -500,8 +528,26 @@ class FilmTrackerApp:
         shot_scroll.grid(row=1, column=1, sticky="ns")
         self.shot_tree.configure(yscrollcommand=shot_scroll.set)
 
-        controls = ttk.Frame(panel)
-        controls.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        legend_frame = ttk.Frame(panel)
+        legend_frame.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        legend_items = (
+            ("shot", "#FFF8E6"),
+            ("developed", "#EAF7EA"),
+            ("scanned", "#E8F4FF"),
+            ("edited", "#F4ECFF"),
+            ("printed", "#FFECEA"),
+        )
+        for col_idx, (status_label, bg_color) in enumerate(legend_items):
+            tk.Label(
+                legend_frame,
+                text=f"  {status_label}  ",
+                background=bg_color,
+                relief="flat",
+                font=("TkDefaultFont", 8),
+            ).grid(row=0, column=col_idx, padx=(0, 4))
+
+        controls = ttk.LabelFrame(panel, text="Bulk Action", padding=(6, 4))
+        controls.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         controls.columnconfigure(0, weight=0)
         controls.columnconfigure(1, weight=0)
         controls.columnconfigure(2, weight=0)
@@ -522,7 +568,7 @@ class FilmTrackerApp:
         ttk.Button(controls, text="Mark Visible", command=self._apply_status_to_visible).grid(row=0, column=3, sticky="w")
 
         form = ttk.LabelFrame(panel, text="Shot Details", padding=10)
-        form.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        form.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         form.columnconfigure(0, weight=1)
         form.columnconfigure(1, weight=1)
         form.columnconfigure(2, weight=1)
@@ -534,12 +580,12 @@ class FilmTrackerApp:
 
         ttk.Label(form, text="Shutter Speed *").grid(row=0, column=0, sticky="w")
         self.shutter_var = tk.StringVar()
-        self.shutter_entry = ttk.Entry(form, textvariable=self.shutter_var, style="Large.TEntry")
+        self.shutter_entry = ttk.Combobox(form, textvariable=self.shutter_var, values=self.SHUTTER_PRESETS, style="Large.TCombobox")
         self.shutter_entry.grid(row=1, column=0, sticky="ew", padx=(0, 8))
 
         ttk.Label(form, text="F-Stop *").grid(row=0, column=1, sticky="w")
         self.fstop_var = tk.StringVar()
-        self.fstop_entry = ttk.Entry(form, textvariable=self.fstop_var, style="Large.TEntry")
+        self.fstop_entry = ttk.Combobox(form, textvariable=self.fstop_var, values=self.FSTOP_PRESETS, style="Large.TCombobox")
         self.fstop_entry.grid(row=1, column=1, sticky="ew", padx=(0, 8))
 
         ttk.Label(form, text="Frame #").grid(row=0, column=2, sticky="w")
@@ -551,10 +597,15 @@ class FilmTrackerApp:
         self.date_var = tk.StringVar()
         self.date_entry = ttk.Entry(form, textvariable=self.date_var, style="Large.TEntry", width=12)
         self.date_entry.grid(row=1, column=3, sticky="ew", padx=(0, 8))
+        date_hint_frame = ttk.Frame(form)
+        date_hint_frame.grid(row=2, column=3, sticky="w", padx=(0, 8))
+        ttk.Label(date_hint_frame, text="YYYY-MM-DD", foreground="#888888").grid(row=0, column=0, sticky="w")
+        ttk.Button(date_hint_frame, text="Today", command=self._set_date_today, width=6).grid(row=0, column=1, padx=(4, 0))
 
         ttk.Label(form, text="Notes").grid(row=0, column=4, columnspan=4, sticky="w")
         self.notes_text = tk.Text(form, height=3, wrap="word", font=self.input_font)
         self.notes_text.grid(row=1, column=4, columnspan=4, sticky="ew")
+        self.notes_text.bind("<Tab>", self._notes_tab_to_status)
 
         ttk.Label(form, text="Status").grid(row=2, column=0, sticky="w", pady=(10, 0))
         self.status_var = tk.StringVar(value="shot")
@@ -576,13 +627,54 @@ class FilmTrackerApp:
         buttons.columnconfigure(2, weight=1)
         buttons.columnconfigure(3, weight=1)
 
-        ttk.Button(buttons, text="Save Shot", command=self._save_shot).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(buttons, text="Save + Next", command=self._save_shot_and_next).grid(row=0, column=1, sticky="ew", padx=4)
+        self.save_shot_btn = ttk.Button(buttons, text="Save Shot", command=self._save_shot)
+        self.save_shot_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self.save_next_btn = ttk.Button(buttons, text="Save + Next", command=self._save_shot_and_next)
+        self.save_next_btn.grid(row=0, column=1, sticky="ew", padx=4)
         ttk.Button(buttons, text="Delete Shot", command=self._delete_shot).grid(row=0, column=2, sticky="ew", padx=4)
         ttk.Button(buttons, text="Clear", command=self._clear_shot_form).grid(row=0, column=3, sticky="ew", padx=(4, 0))
 
+        # Dirty-state tracking: trace StringVars and Notes widget
+        for var in (self.shutter_var, self.fstop_var, self.frame_var, self.date_var, self.status_var):
+            var.trace_add("write", self._on_form_field_changed)
+        self.notes_text.bind("<<Modified>>", self._on_notes_modified)
+
+    def _show_help_tips(self) -> None:
+        tips = (
+            "Quick Tips\n\n"
+            "Capture: use Save + Next for sequential frame-by-frame entry.\n\n"
+            "Review: filter by status to focus on processing stages "
+            "(shot \u2192 developed \u2192 scanned \u2192 edited \u2192 printed).\n\n"
+            "Organize: use Edit to keep roll-level metadata (film stock, camera, "
+            "lens, capacity) complete.\n\n"
+            "Bulk Update: select multiple shots in the list, choose a status, "
+            "and click Mark Selected — or use Mark Visible to update all shown rows at once."
+        )
+        messagebox.showinfo("Quick Tips", tips, parent=self.root)
+
+    def _set_date_today(self) -> None:
+        self.date_var.set(date.today().isoformat())
+
+    def _notes_tab_to_status(self, _event: tk.Event) -> str:
+        self.status_combo.focus_set()
+        return "break"
+
+    def _on_form_field_changed(self, *_args: object) -> None:
+        if not self._loading_form:
+            self._form_dirty = True
+            self.save_shot_btn.configure(text="Save Shot *")
+
+    def _on_notes_modified(self, _event: tk.Event) -> None:
+        if self.notes_text.edit_modified() and not self._loading_form:
+            self._form_dirty = True
+            self.save_shot_btn.configure(text="Save Shot *")
+        self.notes_text.edit_modified(False)
+
     def _on_status_filter_changed(self, _event: object) -> None:
         self._load_shots_for_selected_collection()
+        current_filter = self.active_status_filter.get()
+        self.preferences["default_status_filter"] = current_filter
+        self.db.set_preference("default_status_filter", current_filter)
 
     def _open_preferences_window(self) -> None:
         window = tb.Toplevel(self.root)
@@ -603,12 +695,10 @@ class FilmTrackerApp:
         general_tab = ttk.Frame(notebook, padding=12)
         quick_tab = ttk.Frame(notebook, padding=12)
         metadata_tab = ttk.Frame(notebook, padding=12)
-        workflow_tab = ttk.Frame(notebook, padding=12)
 
         notebook.add(general_tab, text="General")
         notebook.add(quick_tab, text="Quick Entry")
         notebook.add(metadata_tab, text="Metadata")
-        notebook.add(workflow_tab, text="Workflow")
 
         default_status_var = tk.StringVar(value=self.preferences["default_shot_status"])
         default_filter_var = tk.StringVar(value=self.preferences["default_status_filter"])
@@ -722,15 +812,6 @@ class FilmTrackerApp:
             width=10,
         ).grid(row=0, column=1, sticky="ew")
 
-        ttk.Label(workflow_tab, text="Task Tips").grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            workflow_tab,
-            text="Capture: use Save + Next for sequential frame entry.\n"
-            "Review: filter by status to focus on processing stages.\n"
-            "Organize: use Edit to keep roll-level context complete.",
-            justify="left",
-        ).grid(row=1, column=0, sticky="w", pady=(6, 0))
-
         buttons = ttk.Frame(content)
         buttons.grid(row=1, column=0, sticky="e", pady=(12, 0))
 
@@ -783,6 +864,20 @@ class FilmTrackerApp:
             return None
 
         result["iso"] = "" if iso_value is None else str(iso_value)
+
+        cap_raw = result.get("capacity", "").strip()
+        if cap_raw:
+            try:
+                cap_int = int(cap_raw)
+                if cap_int <= 0:
+                    raise ValueError()
+                result["capacity"] = str(cap_int)
+            except ValueError:
+                messagebox.showerror("Validation Error", "Roll capacity must be a positive whole number.", parent=self.root)
+                return None
+        else:
+            result["capacity"] = ""
+
         return result
 
     def _format_collection_hint(
@@ -795,12 +890,18 @@ class FilmTrackerApp:
         if self.selected_collection_id is None:
             return "Select or add a roll collection to begin.", ""
 
+        collection_for_count = self.db.get_collection(self.selected_collection_id)
+        capacity = collection_for_count["capacity"] if collection_for_count is not None else None
         if active_filter == "all":
-            count_text = f"{total_shots_count} shot(s)"
+            if capacity is not None:
+                count_text = f"{total_shots_count}/{capacity} shots"
+            else:
+                shot_word = "shot" if total_shots_count == 1 else "shots"
+                count_text = f"{total_shots_count} {shot_word}"
         else:
             count_text = f"{visible_shots_count} shown / {total_shots_count} total"
 
-        collection = self.db.get_collection(self.selected_collection_id)
+        collection = collection_for_count
         if collection is None:
             return f"Collection: {collection_name} ({count_text})", ""
 
@@ -839,6 +940,13 @@ class FilmTrackerApp:
                 label = f"{label} - {stock}"
             if iso is not None:
                 label = f"{label} (ISO {iso})"
+            shot_count = int(row["shot_count"])
+            capacity = row["capacity"]
+            if capacity is not None:
+                label = f"{label} [{shot_count}/{capacity}]"
+            else:
+                shot_word = "shot" if shot_count == 1 else "shots"
+                label = f"{label} [{shot_count} {shot_word}]"
             collection_id = int(row["id"])
             item = self.collection_list.insert("", tk.END, values=(label,))
             self.collection_id_to_item[collection_id] = item
@@ -890,6 +998,7 @@ class FilmTrackerApp:
                 "name": "",
                 "film_stock": "",
                 "iso": "",
+                "capacity": "",
                 "camera": "",
                 "lens": "",
                 "lab": "",
@@ -898,6 +1007,9 @@ class FilmTrackerApp:
         )
         if details is None:
             return
+
+        cap_raw = details.get("capacity", "").strip()
+        capacity_int: int | None = int(cap_raw) if cap_raw else None
 
         try:
             new_id = self.db.create_collection(
@@ -908,6 +1020,7 @@ class FilmTrackerApp:
                 details["lens"],
                 details["lab"],
                 details["push_pull"],
+                capacity_int,
             )
         except Exception as exc:
             messagebox.showerror("Database Error", f"Could not create collection.\n\n{exc}", parent=self.root)
@@ -935,6 +1048,7 @@ class FilmTrackerApp:
                 "name": row["name"] or "",
                 "film_stock": row["film_stock"] or "",
                 "iso": "" if row["iso"] is None else str(row["iso"]),
+                "capacity": "" if row["capacity"] is None else str(row["capacity"]),
                 "camera": row["camera"] or "",
                 "lens": row["lens"] or "",
                 "lab": row["lab"] or "",
@@ -943,6 +1057,9 @@ class FilmTrackerApp:
         )
         if details is None:
             return
+
+        cap_raw = details.get("capacity", "").strip()
+        capacity_int: int | None = int(cap_raw) if cap_raw else None
 
         try:
             self.db.update_collection_metadata(
@@ -954,6 +1071,7 @@ class FilmTrackerApp:
                 details["lens"],
                 details["lab"],
                 details["push_pull"],
+                capacity_int,
             )
         except Exception as exc:
             messagebox.showerror("Database Error", f"Could not update collection metadata.\n\n{exc}", parent=self.root)
@@ -971,9 +1089,10 @@ class FilmTrackerApp:
             return
 
         count = self.db.shot_count_for_collection(collection_id)
+        shot_word = "shot" if count == 1 else "shots"
         confirm = messagebox.askyesno(
             "Delete Collection",
-            f"Delete this collection and its {count} shot(s)? This cannot be undone.",
+            f"Delete this collection and its {count} {shot_word}? This cannot be undone.",
             parent=self.root,
         )
         if not confirm:
@@ -1173,12 +1292,19 @@ class FilmTrackerApp:
             return
 
         self.selected_shot_id = shot_id
-        self.shutter_var.set(row["shutter_speed"])
-        self.fstop_var.set(row["f_stop"])
-        self.frame_var.set("" if row["frame_number"] is None else str(row["frame_number"]))
-        self.date_var.set(row["shot_date"] or "")
-        self._set_notes_text(row["notes"] or "")
-        self.status_var.set(row["status"] or "shot")
+        self._loading_form = True
+        try:
+            self.shutter_var.set(row["shutter_speed"])
+            self.fstop_var.set(row["f_stop"])
+            self.frame_var.set("" if row["frame_number"] is None else str(row["frame_number"]))
+            self.date_var.set(row["shot_date"] or "")
+            self._set_notes_text(row["notes"] or "")
+            self.status_var.set(row["status"] or "shot")
+        finally:
+            self._loading_form = False
+        self._form_dirty = False
+        self.save_shot_btn.configure(text="Save Shot")
+        self.save_next_btn.configure(state="disabled")
 
     def _get_notes_text(self) -> str:
         return self.notes_text.get("1.0", "end-1c").strip()
@@ -1356,7 +1482,19 @@ class FilmTrackerApp:
             messagebox.showinfo("Select Shot", "Select a shot to delete.", parent=self.root)
             return
 
-        confirm = messagebox.askyesno("Delete Shot", "Delete the selected shot?", parent=self.root)
+        shot_row = self.db.get_shot(self.selected_shot_id)
+        if shot_row is not None:
+            frame = shot_row["frame_number"]
+            shutter = shot_row["shutter_speed"]
+            fstop = shot_row["f_stop"]
+            if frame is not None:
+                detail = f"frame {frame} ({shutter} @ {fstop})"
+            else:
+                detail = f"unframed shot ({shutter} @ {fstop})"
+            confirm_msg = f"Delete {detail}? This cannot be undone."
+        else:
+            confirm_msg = "Delete the selected shot? This cannot be undone."
+        confirm = messagebox.askyesno("Delete Shot", confirm_msg, parent=self.root)
         if not confirm:
             return
 
@@ -1376,12 +1514,19 @@ class FilmTrackerApp:
 
     def _clear_shot_form_fields_only(self) -> None:
         self.selected_shot_id = None
-        self.shutter_var.set("")
-        self.fstop_var.set("")
-        self.frame_var.set("")
-        self.date_var.set("")
-        self._set_notes_text("")
-        self.status_var.set(self.preferences["default_shot_status"])
+        self._loading_form = True
+        try:
+            self.shutter_var.set("")
+            self.fstop_var.set("")
+            self.frame_var.set("")
+            self.date_var.set("")
+            self._set_notes_text("")
+            self.status_var.set(self.preferences["default_shot_status"])
+        finally:
+            self._loading_form = False
+        self._form_dirty = False
+        self.save_shot_btn.configure(text="Save Shot")
+        self.save_next_btn.configure(state="normal")
 
 
 def main() -> None:
