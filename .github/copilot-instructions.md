@@ -93,6 +93,8 @@ Or use `run.bat` from File Explorer to automate the above.
 - Status filter and bulk operations
 - Dialog form validation
 
+Use the dedicated manual checklist in `.github/manual-smoke-test.instructions.md` for a full end-to-end smoke pass.
+
 Consider adding unit tests for `ValidationUtils` and `FilmDatabase` for confidence in future refactoring.
 
 ## Conventions
