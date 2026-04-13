@@ -432,6 +432,7 @@ class FilmDatabase:
         errors: list[str] = []
         with self._connect() as conn:
             for index, shot in enumerate(shots, start=1):
+                source_row = shot.get("_source_line", index)
                 try:
                     conn.execute(
                         """
@@ -457,7 +458,7 @@ class FilmDatabase:
                     )
                     inserted += 1
                 except sqlite3.IntegrityError as exc:
-                    errors.append(f"Row {index}: {exc}")
+                    errors.append(f"Row {source_row}: {exc}")
 
         return inserted, errors
 

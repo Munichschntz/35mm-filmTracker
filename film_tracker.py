@@ -684,7 +684,7 @@ class FilmTrackerApp:
             workflow_tab,
             text="Capture: use Save + Next for sequential frame entry.\n"
             "Review: filter by status to focus on processing stages.\n"
-            "Organize: use Edit Meta to keep roll-level context complete.",
+            "Organize: use Edit to keep roll-level context complete.",
             justify="left",
         ).grid(row=1, column=0, sticky="w", pady=(6, 0))
 
@@ -1031,6 +1031,7 @@ class FilmTrackerApp:
                                 "shot_date": shot_date,
                                 "notes": ValidationUtils.normalize_optional_text(record.get("notes")),
                                 "status": status,
+                                "_source_line": index,
                             }
                         )
                     except ValueError as exc:
@@ -1052,7 +1053,7 @@ class FilmTrackerApp:
         if db_errors:
             messages.append(f"Skipped {len(db_errors)} row(s) due to database conflicts.")
 
-        detail_lines = parse_errors[:5] + db_errors[:5]
+        detail_lines = (parse_errors + db_errors)[:5]
         detail_text = ""
         if detail_lines:
             detail_text = "\n\nDetails (first 5):\n" + "\n".join(detail_lines)
@@ -1101,6 +1102,7 @@ class FilmTrackerApp:
         selection = self.shot_tree.selection()
         if len(selection) != 1:
             self.selected_shot_id = None
+            self._clear_shot_form()
             return
 
         shot_id = int(selection[0])
