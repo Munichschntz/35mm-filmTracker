@@ -394,8 +394,12 @@ class FilmTrackerApp:
         input_font = base_font.copy()
         input_font.configure(size=base_font.cget("size") + 1)
         self.input_font = input_font
+        section_header_font = base_font.copy()
+        section_header_font.configure(size=base_font.cget("size") + 2, weight="bold")
+        self.section_header_font = section_header_font
 
         style.configure("TButton", padding=(8, 4))
+        style.configure("Section.TLabelframe.Label", font=self.section_header_font)
         style.configure("Large.TEntry", font=self.input_font, padding=(6, 6))
         style.configure("Large.TCombobox", font=self.input_font, padding=(6, 6))
 
@@ -439,7 +443,7 @@ class FilmTrackerApp:
 
 
     def _build_collection_panel(self, parent: ttk.PanedWindow) -> None:
-        panel = ttk.LabelFrame(parent, text="Roll Collections", padding=10)
+        panel = ttk.LabelFrame(parent, text="Roll Collections", padding=10, style="Section.TLabelframe")
         parent.add(panel, weight=1)
         panel.columnconfigure(0, weight=1)
         panel.rowconfigure(0, weight=1)
@@ -471,7 +475,7 @@ class FilmTrackerApp:
         ttk.Button(buttons, text="Export", command=self._export_shots_csv).grid(row=1, column=3, columnspan=3, sticky="ew", padx=(4, 0), pady=(6, 0))
 
     def _build_shot_panel(self, parent: ttk.PanedWindow) -> None:
-        panel = ttk.LabelFrame(parent, text="Shots", padding=10)
+        panel = ttk.LabelFrame(parent, text="Shots", padding=10, style="Section.TLabelframe")
         parent.add(panel, weight=4)
         panel.columnconfigure(0, weight=1)
         panel.rowconfigure(1, weight=1)
@@ -552,7 +556,7 @@ class FilmTrackerApp:
                 font=("TkDefaultFont", 8),
             ).grid(row=0, column=col_idx, padx=(0, 4))
 
-        controls = ttk.LabelFrame(panel, text="Bulk Action", padding=(6, 4))
+        controls = ttk.LabelFrame(panel, text="Bulk Action", padding=(6, 4), style="Section.TLabelframe")
         controls.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         controls.columnconfigure(0, weight=0)
         controls.columnconfigure(1, weight=0)
@@ -573,7 +577,7 @@ class FilmTrackerApp:
         ttk.Button(controls, text="Mark Selected", command=self._apply_status_to_selected).grid(row=0, column=2, sticky="w", padx=(0, 8))
         ttk.Button(controls, text="Mark Visible", command=self._apply_status_to_visible).grid(row=0, column=3, sticky="w")
 
-        form = ttk.LabelFrame(panel, text="Shot Details", padding=10)
+        form = ttk.LabelFrame(panel, text="Shot Details", padding=10, style="Section.TLabelframe")
         form.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         form.columnconfigure(0, weight=1)
         form.columnconfigure(1, weight=1)

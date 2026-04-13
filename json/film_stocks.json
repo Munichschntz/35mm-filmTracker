@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "films": [
+    { "id": "kodak_gold_200", "name": "Kodak Gold 200", "iso": 200, "process": "C-41", "active": true },
+    { "id": "kodak_ultramax_400", "name": "Kodak UltraMax 400", "iso": 400, "process": "C-41", "active": true },
+    { "id": "kodak_portra_160", "name": "Kodak Portra 160", "iso": 160, "process": "C-41", "active": true },
+    { "id": "kodak_portra_400", "name": "Kodak Portra 400", "iso": 400, "process": "C-41", "active": true },
+    { "id": "kodak_portra_800", "name": "Kodak Portra 800", "iso": 800, "process": "C-41", "active": true },
+    { "id": "kodak_ektar_100", "name": "Kodak Ektar 100", "iso": 100, "process": "C-41", "active": true },
+    { "id": "kodak_proimage_100", "name": "Kodak Pro Image 100", "iso": 100, "process": "C-41", "active": true },
+
+    { "id": "fujifilm_200", "name": "Fujifilm 200", "iso": 200, "process": "C-41", "active": true },
+    { "id": "fujifilm_400", "name": "Fujifilm 400", "iso": 400, "process": "C-41", "active": true },
+
+    { "id": "cinestill_50d", "name": "CineStill 50D", "iso": 50, "process": "C-41", "active": true },
+    { "id": "cinestill_400d", "name": "CineStill 400D", "iso": 400, "process": "C-41", "active": true },
+    { "id": "cinestill_800t", "name": "CineStill 800T", "iso": 800, "process": "C-41", "active": true },
+
+    { "id": "ilford_hp5_plus", "name": "Ilford HP5 Plus", "iso": 400, "process": "BW", "active": true },
+    { "id": "ilford_fp4_plus", "name": "Ilford FP4 Plus", "iso": 125, "process": "BW", "active": true },
+    { "id": "ilford_delta_100", "name": "Ilford Delta 100", "iso": 100, "process": "BW", "active": true },
+    { "id": "ilford_delta_400", "name": "Ilford Delta 400", "iso": 400, "process": "BW", "active": true },
+    { "id": "ilford_delta_3200", "name": "Ilford Delta 3200", "iso": 3200, "process": "BW", "active": true },
+
+    { "id": "kodak_trix_400", "name": "Kodak Tri-X 400", "iso": 400, "process": "BW", "active": true },
+    { "id": "kodak_tmax_100", "name": "Kodak T-Max 100", "iso": 100, "process": "BW", "active": true },
+    { "id": "kodak_tmax_400", "name": "Kodak T-Max 400", "iso": 400, "process": "BW", "active": true },
+    { "id": "kodak_tmax_p3200", "name": "Kodak T-Max P3200", "iso": 3200, "process": "BW", "active": true },
+
+    { "id": "ektachrome_e100", "name": "Kodak Ektachrome E100", "iso": 100, "process": "E-6", "active": true },
+    { "id": "velvia_50", "name": "Fujifilm Velvia 50", "iso": 50, "process": "E-6", "active": true },
+    { "id": "velvia_100", "name": "Fujifilm Velvia 100", "iso": 100, "process": "E-6", "active": true },
+    { "id": "provia_100f", "name": "Fujifilm Provia 100F", "iso": 100, "process": "E-6", "active": true }
+  ]
+}

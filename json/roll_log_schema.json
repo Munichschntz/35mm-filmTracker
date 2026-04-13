@@ -1,0 +1,14 @@
+{
+  "roll_id": "uuid",
+  "film_id": "kodak_portra_400",
+  "camera": "Nikon F100",
+  "lens": "50mm f/1.8",
+  "date_loaded": "2026-04-12",
+  "date_finished": null,
+  "notes": "Portrait session downtown",
+  "status": "loaded",
+  "frames_shot": 12,
+  "location": "Austin, TX",
+  "lab": null,
+  "scanned": false
+}

@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": { "type": "string" },
+    "films": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "manufacturer", "type", "process", "iso", "active"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "manufacturer": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["color_negative", "black_and_white", "slide", "cinema"]
+          },
+          "process": {
+            "type": "string",
+            "enum": ["C-41", "BW", "E-6", "ECN-2"]
+          },
+          "iso": { "type": "number" },
+          "iso_native": { "type": "number" },
+          "is_rebranded": { "type": "boolean" },
+          "cinema_derived": { "type": "boolean" },
+          "notes": { "type": "string" },
+          "active": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
