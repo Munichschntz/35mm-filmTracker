@@ -3,6 +3,10 @@
 35mm Film Shot Tracker is a full desktop workflow app for logging, organizing, and processing analog film shots by roll.
 It helps you track exposure details while shooting, then follow each frame through your post-processing pipeline (`shot` -> `developed` -> `scanned` -> `edited` -> `printed`).
 
+### Application Screenshot
+
+![35mm Film Shot Tracker main window](screenshots/application_main.png)
+
 ### Features
 
 - Roll collections (for example: Portra 400 - Roll 3)
