@@ -1,6 +1,7 @@
 ## 35mm Film Shot Tracker
 
-This repository now includes a Tkinter desktop app for tracking film shots per roll collection.
+35mm Film Shot Tracker is a full desktop workflow app for logging, organizing, and processing analog film shots by roll.
+It helps you track exposure details while shooting, then follow each frame through your post-processing pipeline (`shot` -> `developed` -> `scanned` -> `edited` -> `printed`).
 
 ### Features
 
@@ -12,7 +13,7 @@ This repository now includes a Tkinter desktop app for tracking film shots per r
 	- Lens (optional)
 	- Lab (optional)
 	- Push/pull notes (optional)
-- Structured metadata dialog for add/edit collection metadata
+- Structured add/edit metadata dialogs for roll collections
 - Shot entries inside each collection
 - Shot fields:
 	- Shutter speed
@@ -25,16 +26,19 @@ This repository now includes a Tkinter desktop app for tracking film shots per r
 - Status filter (`all` plus each status value)
 - Bulk status update actions (`Mark Selected`, `Mark Visible`)
 - Quick entry support with `Save + Next` and keyboard shortcut `Ctrl+Enter`
-- Preferences window (`App` -> `Preferences`) with tabbed settings for defaults, quick entry, metadata display, and workflow tips
-- Camera and lens presets (configured in Preferences, reused in collection metadata dialog)
+- Preferences window with tabbed settings for defaults, quick entry, metadata display, and workflow tips
+- Visible `Settings` button in the main window (plus `App` -> `Preferences` menu access)
+- Camera and lens preset management via list dialogs (`Manage` buttons in Preferences -> Metadata)
+- Preset changes are staged in Preferences and saved only when you click `Save`
 - ISO date entry field for shot date (`YYYY-MM-DD`)
 - Themed UI using `ttkbootstrap` (`litera`)
 - CSV export for collection shots
-- CSV import for batch shot insertion with row-level error summary
+- CSV import for batch shot insertion with row-level validation/conflict summary
 - Status-colored shot rows in the table
 - Last selected collection restore on app startup
 - SQLite persistence at `data/film_tracker.db`
 - Delete protection prompts for collections and shots
+- Dialog windows open centered over the main app window for consistent UX
 - Automatic schema migration support (uses SQLite `PRAGMA user_version`)
 
 ### Run
@@ -122,8 +126,8 @@ Frame numbers are unique within the same collection when provided.
 7. Use the status filter and bulk status controls above the shot form as needed.
 8. Select an existing shot to edit, then click `Save Shot`.
 9. Use `Delete Shot` or `Delete` (collection) to remove data.
-10. Open `App` -> `Preferences` to customize default status/filter and quick-entry behavior.
-11. Configure camera/lens presets in `App` -> `Preferences` -> `Metadata` and reuse them in add/edit metadata dialogs.
+10. Open Preferences from the `Settings` button (or `App` -> `Preferences`) to customize default status/filter and quick-entry behavior.
+11. Configure camera/lens presets from Preferences -> `Metadata` -> `Manage` buttons (list dialogs) and reuse them in add/edit metadata dialogs.
 12. Use `Export` in the collections panel to save shots as CSV.
 13. Use `Import` in the collections panel to bulk insert shots from CSV.
 
@@ -135,6 +139,9 @@ Frame numbers are unique within the same collection when provided.
 4. Edit one shot and verify values update.
 5. Delete a shot and verify removal.
 6. Delete a collection and verify associated shots are removed.
-7. Set camera/lens presets in Preferences and verify they appear in the collection metadata dialog.
-8. Export a populated collection to CSV and verify row contents.
-9. Import the CSV into another collection and verify inserted row count and conflict handling.
+7. Open Preferences from the Settings button and verify the dialog appears above the app window.
+8. Set camera/lens presets using the Metadata `Manage` dialogs and verify they appear in the collection metadata dialog.
+9. Verify that canceling Preferences does not persist staged preset edits.
+10. Verify that saving Preferences persists staged preset edits.
+11. Export a populated collection to CSV and verify row contents.
+12. Import the CSV into another collection and verify inserted row count and conflict handling.
